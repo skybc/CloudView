@@ -58,6 +58,19 @@ PointCloudViewer 是 CloudView.Controls 项目中的核心渲染控件，负责�
 - 片段着色器：输出点的颜色
 - 使用 uniform 矩阵传递模型、视图和投影变换
 
+### 7. 文本覆盖层渲染
+在右上角显示鼠标世界坐标信息（X、Y、Z，单位 mm）：
+- **固定像素大小**：文字大小不随窗口缩放变化
+- **字体大小**：16 像素（可配置）
+- **颜色**：绿色 (Lime)
+
+**实现细节**：
+- 使用正交投影矩阵 (Orthographic Projection) 渲染文本
+- 顶点坐标使用像素坐标而非 NDC 坐标
+- 正交投影矩阵通过 `Matrix4x4.CreateOrthographicOffCenter(0, windowWidth, windowHeight, 0, -1, 1)` 创建
+- 文本通过 WPF `FormattedText` 生成纹理，再使用 OpenGL 绘制
+- 着色器通过 `uProjection` uniform 接收正交投影矩阵
+
 ## 渲染流程
 
 ```
@@ -65,7 +78,8 @@ Render() → Clear背景 → 设置矩阵和着色器 →
   ├─ 绘制坐标系 (if ShowCoordinateAxis)
   ├─ 绘制网格 (if ShowGrid)
   ├─ 绘制点云
-  └─ 绘制ROI矩形 (if 正在绘制)
+  ├─ 绘制ROI矩形 (if 正在绘制)
+  └─ 绘制文本覆盖层 (鼠标世界坐标)
   → SwapBuffers
 ```
 

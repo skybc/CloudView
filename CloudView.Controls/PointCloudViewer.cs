@@ -399,17 +399,19 @@ void main()
 }
 ";
 
-    // 文本渲染着色器
+    // 文本渲染着色器（使用正交投影，像素坐标）
     private const string TextVertexShaderSource = @"
 #version 330 core
 layout (location = 0) in vec2 aPosition;
 layout (location = 1) in vec2 aTexCoord;
 
+uniform mat4 uProjection;
+
 out vec2 vTexCoord;
 
 void main()
 {
-    gl_Position = vec4(aPosition.xy, 0.0, 1.0);
+    gl_Position = uProjection * vec4(aPosition.xy, 0.0, 1.0);
     vTexCoord = aTexCoord;
 }
 ";
@@ -424,7 +426,7 @@ uniform vec4 uColor;
 
 void main()
 {
-    vec4 texColor = texture(uTexture, vTexCoord); 
+    vec4 texColor = texture(uTexture, vec2(vTexCoord.x, 1.0 - vTexCoord.y)); 
     FragColor = vec4(uColor.rgb, texColor.a * uColor.a);
 }
 ";
@@ -1113,9 +1115,13 @@ void main()
         if (_gl == null || _overlayShaderProgram == 0)
             return;
 
-        // 在 NDC 空间中定义右上角的一个区域
-        float overlayWidthNdc = 0.55f;  // 覆盖宽度
-        float overlayHeightNdc = 0.28f; // 覆盖高度
+        // 在屏幕空间中定义右上角的一个固定大小区域（单位：像素）
+        const int overlayWidthPx = 140;  // 固定宽度 300 像素
+        const int overlayHeightPx = 100; // 固定高度 100 像素
+
+        // 转换为 NDC 坐标
+        float overlayWidthNdc = (2.0f * overlayWidthPx) / width;
+        float overlayHeightNdc = (2.0f * overlayHeightPx) / height;
 
         float right = 1.0f;
         float top = 1.0f;
@@ -1165,42 +1171,7 @@ void main()
         float xRowTop = top - rowHeight;
         float yRowTop = top - 2 * rowHeight;
         float zRowTop = top - 3 * rowHeight;
-
-        //// 标题行（Mouse (mm)）用稍亮的背景条表示
-        //float titleBgR = 0.15f, titleBgG = 0.15f, titleBgB = 0.15f, titleBgA = 0.9f;
-        //AddQuad(left, right, xRowTop, titleTop, titleBgR, titleBgG, titleBgB, titleBgA);
-
-        //// X 行背景 + 数值条（红色）
-        //float xRowBottom = yRowTop;
-        //float rowBgR = 0.08f, rowBgG = 0.08f, rowBgB = 0.08f, rowBgA = 0.9f;
-        //AddQuad(left, right, xRowBottom, xRowTop, rowBgR, rowBgG, rowBgB, rowBgA);
-
-        //float xLabelRight = left + labelWidth;
-        //float xValueLeft = xLabelRight + overlayWidthNdc * 0.02f;
-        //float xValueRight = xValueLeft + valueWidth * nx;
-        //float xr = 0.85f, xg = 0.25f, xb = 0.25f, xa = 0.95f;
-        //AddQuad(xValueLeft, xValueRight, xRowBottom + rowHeight * 0.2f, xRowTop - rowHeight * 0.2f, xr, xg, xb, xa);
-
-        //// Y 行背景 + 数值条（绿色）
-        //float yRowBottom = zRowTop;
-        //AddQuad(left, right, yRowBottom, yRowTop, rowBgR, rowBgG, rowBgB, rowBgA);
-
-        //float yLabelRight = left + labelWidth;
-        //float yValueLeft = yLabelRight + overlayWidthNdc * 0.02f;
-        //float yValueRight = yValueLeft + valueWidth * ny;
-        //float yr = 0.35f, yg = 0.8f, yb = 0.35f, ya = 0.95f;
-        //AddQuad(yValueLeft, yValueRight, yRowBottom + rowHeight * 0.2f, yRowTop - rowHeight * 0.2f, yr, yg, yb, ya);
-
-        //// Z 行背景 + 数值条（蓝色）
-        //float zRowBottom = bottom;
-        //AddQuad(left, right, zRowBottom, zRowTop, rowBgR, rowBgG, rowBgB, rowBgA);
-
-        //float zLabelRight = left + labelWidth;
-        //float zValueLeft = zLabelRight + overlayWidthNdc * 0.02f;
-        //float zValueRight = zValueLeft + valueWidth * nz;
-        //float zr = 0.3f, zg = 0.45f, zb = 0.85f, za = 0.95f;
-        //AddQuad(zValueLeft, zValueRight, zRowBottom + rowHeight * 0.2f, zRowTop - rowHeight * 0.2f, zr, zg, zb, za);
-
+         
         var vertices = verticesList.ToArray();
 
         // 创建或更新 VAO/VBO
@@ -1242,15 +1213,19 @@ void main()
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
         _gl.BindVertexArray(0);
 
-        // 绘制文本标签和数值
-        float fontSize = 48;
-        float startX = 0.65f;
-        float startY = 0.95f;
-        float lineSpacing = 0.08f;
+        // 绘制文本标签和数值（使用像素坐标，固定字体大小）
+        const float fontSize = 16;        // 固定字体大小（像素）
+        const float lineSpacing = 22;     // 行间距（像素）
+        const float marginRight = 10;     // 右边距（像素）
+        const float marginTop = 10;       // 上边距（像素）
 
-        DrawText($"X: {xMm:F1} mm", startX, startY, fontSize);
-        DrawText($"Y: {yMm:F1} mm", startX, startY - lineSpacing, fontSize);
-        DrawText($"Z: {zMm:F1} mm", startX, startY - lineSpacing * 2, fontSize);
+        // 计算起始位置 - 右上角
+        float startX = width - overlayWidthPx + marginRight;
+        float startY = marginTop;
+
+        DrawText($"X: {xMm:F1} mm", startX, startY, fontSize, width, height);
+        DrawText($"Y: {yMm:F1} mm", startX, startY + lineSpacing, fontSize, width, height);
+        DrawText($"Z: {zMm:F1} mm", startX, startY + lineSpacing * 2, fontSize, width, height);
     }
 
     /// <summary>
@@ -1258,14 +1233,14 @@ void main()
     /// </summary>
     private unsafe uint CreateTextTexture(string text, int fontSize = 14)
     {
-        // 使用 WPF 的 FormattedText 生成文本位图
+        // 使用 WPF 的 FormattedText 生成文本位图 - 文本颜色为绿色
         var formattedText = new System.Windows.Media.FormattedText(
             text,
             System.Globalization.CultureInfo.GetCultureInfo("en-us"),
             System.Windows.FlowDirection.LeftToRight,
             new System.Windows.Media.Typeface("Arial"),
             fontSize,
-            System.Windows.Media.Brushes.White,
+            System.Windows.Media.Brushes.Lime,
             VisualTreeHelper.GetDpi(this).PixelsPerDip);
 
         int width = (int)formattedText.Width + 4;
@@ -1290,6 +1265,7 @@ void main()
         // 转换为 RGBA 格式（从 PBGRA）
         for (int i = 0; i < pixels.Length; i += 4)
         {
+            // 交换 R 和 B (PBGRA -> RGBA)
             (pixels[i], pixels[i + 2]) = (pixels[i + 2], pixels[i]);
         }
 
@@ -1313,9 +1289,15 @@ void main()
     }
 
     /// <summary>
-    /// 绘制文本到指定位置（NDC 坐标系）
+    /// 绘制文本到指定位置（像素坐标系）
     /// </summary>
-    private unsafe void DrawText(string text, float ndcX, float ndcY, float fontSize)
+    /// <param name="text">要绘制的文本</param>
+    /// <param name="pixelX">屏幕 X 坐标（像素）</param>
+    /// <param name="pixelY">屏幕 Y 坐标（像素）</param>
+    /// <param name="fontSize">字体大小（像素）</param>
+    /// <param name="windowWidth">窗口宽度</param>
+    /// <param name="windowHeight">窗口高度</param>
+    private unsafe void DrawText(string text, float pixelX, float pixelY, float fontSize, int windowWidth, int windowHeight)
     {
         if (_gl == null || _textShaderProgram == 0)
             return;
@@ -1323,17 +1305,36 @@ void main()
         // 生成文本纹理
         uint textTexture = CreateTextTexture(text, (int)fontSize);
 
-        // 计算文本在NDC空间中的宽度和高度（近似）
-        float textWidth = text.Length * fontSize * 0.05f / 100f;  // 粗略估计
-        float textHeight = fontSize * 0.08f / 100f;
+        // 获取纹理实际尺寸（2的幂对齐后）
+        // 使用 FormattedText 计算实际文本尺寸
+        var formattedText = new System.Windows.Media.FormattedText(
+            text,
+            System.Globalization.CultureInfo.GetCultureInfo("en-us"),
+            System.Windows.FlowDirection.LeftToRight,
+            new System.Windows.Media.Typeface("Arial"),
+            fontSize,
+            System.Windows.Media.Brushes.White,
+            VisualTreeHelper.GetDpi(this).PixelsPerDip);
+
+        // 计算纹理尺寸（2的幂对齐）
+        int texWidth = 1 << (int)Math.Ceiling(Math.Log2((int)formattedText.Width + 4));
+        int texHeight = 1 << (int)Math.Ceiling(Math.Log2((int)formattedText.Height + 4));
+
+        // 使用像素坐标构建矩形顶点
+        // 左上角为 (pixelX, pixelY)，向右下延伸
+        float left = pixelX;
+        float top = pixelY;
+        float right = pixelX + texWidth;
+        float bottom = pixelY + texHeight;
 
         // 四个顶点: 左上、右上、左下、右下
+        // 纹理坐标：OpenGL 纹理原点在左下角，WPF 位图原点在左上角
         var vertices = new float[]
         {
-            ndcX, ndcY, 0, 1,                           // 左上
-            ndcX + textWidth, ndcY, 1, 1,               // 右上
-            ndcX, ndcY - textHeight, 0, 0,              // 左下
-            ndcX + textWidth, ndcY - textHeight, 1, 0   // 右下
+            left, top, 0, 1,           // 左上 (纹理坐标 0,1)
+            right, top, 1, 1,          // 右上 (纹理坐标 1,1)
+            left, bottom, 0, 0,        // 左下 (纹理坐标 0,0)
+            right, bottom, 1, 0        // 右下 (纹理坐标 1,0)
         };
 
         if (_textVao == 0)
@@ -1360,9 +1361,14 @@ void main()
 
         _gl.UseProgram(_textShaderProgram);
 
-        // 设置 uniform
+        // 创建正交投影矩阵 - 使用像素坐标系
+        // left=0, right=windowWidth, top=0, bottom=windowHeight (Y轴向下)
+        var orthoProjection = Matrix4x4.CreateOrthographicOffCenter(0, windowWidth, windowHeight, 0, -1, 1);
+        SetUniformMatrix4(_gl, _textShaderProgram, "uProjection", orthoProjection);
+
+        // 设置 uniform - 文本颜色为绿色
         int colorLoc = _gl.GetUniformLocation(_textShaderProgram, "uColor");
-        _gl.Uniform4(colorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
+        _gl.Uniform4(colorLoc, 0.0f, 1.0f, 0.0f, 1.0f);  // 绿色 (0, 1, 0, 1)
 
         int texLoc = _gl.GetUniformLocation(_textShaderProgram, "uTexture");
         _gl.Uniform1(texLoc, 0);
@@ -1374,10 +1380,12 @@ void main()
         // 启用混合
         _gl.Enable(EnableCap.Blend);
         _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+        _gl.Disable(EnableCap.DepthTest);
 
         // 绘制矩形（三角形条带）
         _gl.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
 
+        _gl.Enable(EnableCap.DepthTest);
         _gl.Disable(EnableCap.Blend);
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
         _gl.BindVertexArray(0);
