@@ -3,6 +3,58 @@
 ## 概述
 PointCloudViewer 是 CloudView.Controls 项目中的核心渲染控件，负责通过 OpenGL 和 Silk.NET 实现三维点云的实时可视化。
 
+## 架构设计
+
+### 模块分离
+自版本 2.0 起，渲染模块采用关注点分离设计，分为以下三个核心类：
+
+#### 1. **PointCloudViewer** (PointCloudViewer.cs)
+- **职责**：WPF 控件类，处理 UI 集成、数据绑定、事件管理和渲染逻辑编排
+- **主要功能**：
+  - 依赖属性定义（数据绑定接口）
+  - 着色器编译与链接
+  - 缓冲区和顶点数组管理
+  - 渲染循环协调（60 FPS 定时器）
+  - 摄像机控制与矩阵计算
+  - 鼠标交互处理（ROI 选择、旋转、缩放）
+  - 公共 API 提供
+- **关键字段**：
+  - `_gl`: Silk.NET OpenGL 实例
+  - `_hDC`, `_hGLRC`: 设备上下文和 OpenGL 上下文句柄
+  - `_isInitialized`: 初始化标志
+  - 着色器程序 ID：`_shaderProgram`, `_overlayShaderProgram`, `_textShaderProgram`
+  - 缓冲区对象：`_vao`, `_vbo`（点云）、`_axisVao`, `_axisVbo`（坐标系）等
+
+#### 2. **OpenGLHost** (OpenGLHost.cs) - 新增
+- **职责**：Win32 原生窗口的 HwndHost 包装器，将 OpenGL 渲染目标集成到 WPF 控件树
+- **主要功能**：
+  - 创建原生 Win32 静态控制窗口作为 OpenGL 绘图表面
+  - 与 PointCloudViewer 协作进行初始化和清理
+  - 处理窗口大小变化事件并同步到 OpenGL 视口
+- **关键方法**：
+  - `BuildWindowCore()`: 创建原生窗口并调用 PointCloudViewer.InitializeOpenGL
+  - `DestroyWindowCore()`: 销毁原生窗口并调用 PointCloudViewer.CleanupOpenGL
+  - `OnRenderSizeChanged()`: 响应窗口大小变化
+
+#### 3. **Win32Interop** (Win32Interop.cs) - 新增
+- **职责**：集中管理所有 Win32 API P/Invoke 声明和相关常数
+- **主要功能**：
+  - 设备上下文操作：GetDC, ReleaseDC
+  - 像素格式管理：ChoosePixelFormat, SetPixelFormat
+  - OpenGL 上下文管理：wglCreateContext, wglMakeCurrent, wglDeleteContext, wglGetProcAddress
+  - 窗口创建销毁：CreateWindowEx, DestroyWindow
+  - 模块加载：LoadLibrary, GetProcAddress
+- **关键常数**：
+  - 像素格式标志：PFD_DRAW_TO_WINDOW, PFD_SUPPORT_OPENGL, PFD_DOUBLEBUFFER
+  - 窗口样式：WS_CHILD, WS_VISIBLE, WS_CLIPSIBLINGS, WS_CLIPCHILDREN
+  - 像素格式描述符结构体 (PIXELFORMATDESCRIPTOR)
+
+### 架构优势
+1. **关注点分离**：每个类职责明确，易于维护和测试
+2. **可复用性**：Win32Interop 可被其他项目或组件使用
+3. **可扩展性**：新的窗口托管方式可轻松扩展 OpenGLHost
+4. **清晰的依赖关系**：PointCloudViewer ← OpenGLHost + Win32Interop
+
 ## 主要功能
 
 ### 1. 点云渲染

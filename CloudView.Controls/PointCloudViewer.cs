@@ -14,7 +14,22 @@ using PixelFormat = Silk.NET.OpenGL.PixelFormat;
 namespace CloudView.Controls;
 
 /// <summary>
-/// 使用 Silk.NET.OpenGL 渲染三维点云的 WPF 控件
+/// 点云渲染控件，使用 Silk.NET.OpenGL 在 WPF 中实现三维点云的实时可视化。
+/// 
+/// 核心功能：
+/// - 使用 VAO/VBO 高效渲染大规模点云数据集
+/// - 支持摄像机操纵（旋转、缩放、平移）
+/// - 支持鼠标矩形选择（ROI）
+/// - 显示坐标系轴线和 XY 平面网格
+/// - 实时文本覆盖层显示交互信息
+/// - 双缓冲 OpenGL 渲染，60 FPS 渲染循环
+/// 
+/// 架构说明：
+/// - 继承自 WPF 控件基类 (Control)
+/// - 使用 OpenGLHost (HwndHost) 在 WPF 中托管原生 Win32 窗口以进行 OpenGL 渲染
+/// - 与 Win32Interop 合作管理原生 API 调用
+/// - 采用依赖属性 (DependencyProperty) 实现 MVVM 数据绑定
+/// - 事件驱动模式用于用户交互通知 (ROI 选择、鼠标位置)
 /// </summary>
 public partial class PointCloudViewer : Control
 {
@@ -23,79 +38,6 @@ public partial class PointCloudViewer : Control
         DefaultStyleKeyProperty.OverrideMetadata(typeof(PointCloudViewer), 
             new FrameworkPropertyMetadata(typeof(PointCloudViewer)));
     }
-    #region Win32 API
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern IntPtr GetDC(IntPtr hWnd);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
-
-    [DllImport("gdi32.dll", SetLastError = true)]
-    private static extern int ChoosePixelFormat(IntPtr hDC, ref PIXELFORMATDESCRIPTOR ppfd);
-
-    [DllImport("gdi32.dll", SetLastError = true)]
-    private static extern bool SetPixelFormat(IntPtr hDC, int iPixelFormat, ref PIXELFORMATDESCRIPTOR ppfd);
-
-    [DllImport("gdi32.dll", SetLastError = true)]
-    private static extern bool SwapBuffers(IntPtr hDC);
-
-    [DllImport("opengl32.dll", SetLastError = true)]
-    private static extern IntPtr wglCreateContext(IntPtr hDC);
-
-    [DllImport("opengl32.dll", SetLastError = true)]
-    private static extern bool wglMakeCurrent(IntPtr hDC, IntPtr hGLRC);
-
-    [DllImport("opengl32.dll", SetLastError = true)]
-    private static extern bool wglDeleteContext(IntPtr hGLRC);
-
-    [DllImport("opengl32.dll", SetLastError = true)]
-    private static extern IntPtr wglGetProcAddress(string lpszProc);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr GetProcAddress(IntPtr hModule, string lpProcName);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr LoadLibrary(string lpLibFileName);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct PIXELFORMATDESCRIPTOR
-    {
-        public ushort nSize;
-        public ushort nVersion;
-        public uint dwFlags;
-        public byte iPixelType;
-        public byte cColorBits;
-        public byte cRedBits;
-        public byte cRedShift;
-        public byte cGreenBits;
-        public byte cGreenShift;
-        public byte cBlueBits;
-        public byte cBlueShift;
-        public byte cAlphaBits;
-        public byte cAlphaShift;
-        public byte cAccumBits;
-        public byte cAccumRedBits;
-        public byte cAccumGreenBits;
-        public byte cAccumBlueBits;
-        public byte cAccumAlphaBits;
-        public byte cDepthBits;
-        public byte cStencilBits;
-        public byte cAuxBuffers;
-        public byte iLayerType;
-        public byte bReserved;
-        public uint dwLayerMask;
-        public uint dwVisibleMask;
-        public uint dwDamageMask;
-    }
-
-    private const uint PFD_DRAW_TO_WINDOW = 0x00000004;
-    private const uint PFD_SUPPORT_OPENGL = 0x00000020;
-    private const uint PFD_DOUBLEBUFFER = 0x00000001;
-    private const byte PFD_TYPE_RGBA = 0;
-    private const byte PFD_MAIN_PLANE = 0;
-
-    #endregion
 
     #region 依赖属性
 
@@ -283,10 +225,10 @@ public partial class PointCloudViewer : Control
 
     #region 私有字段
 
-    private IntPtr _hDC;
-    private IntPtr _hGLRC;
-    private GL? _gl;
-    private bool _isInitialized;
+    internal IntPtr _hDC;
+    internal IntPtr _hGLRC;
+    internal GL? _gl;
+    internal bool _isInitialized;
 
     // 着色器程序
     private uint _shaderProgram;
@@ -474,96 +416,47 @@ void main()
 
     #region OpenGL 宿主
 
-    private class OpenGLHost : HwndHost
-    {
-        private readonly PointCloudViewer _parent;
-        private IntPtr _hwnd;
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern IntPtr CreateWindowEx(
-            uint dwExStyle, string lpClassName, string lpWindowName,
-            uint dwStyle, int x, int y, int nWidth, int nHeight,
-            IntPtr hWndParent, IntPtr hMenu, IntPtr hInstance, IntPtr lpParam);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool DestroyWindow(IntPtr hWnd);
-
-        private const uint WS_CHILD = 0x40000000;
-        private const uint WS_VISIBLE = 0x10000000;
-        private const uint WS_CLIPSIBLINGS = 0x04000000;
-        private const uint WS_CLIPCHILDREN = 0x02000000;
-
-        public OpenGLHost(PointCloudViewer parent)
-        {
-            _parent = parent;
-        }
-
-        protected override HandleRef BuildWindowCore(HandleRef hwndParent)
-        {
-            _hwnd = CreateWindowEx(
-                0,
-                "static",
-                "",
-                WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
-                0, 0,
-                (int)_parent.ActualWidth,
-                (int)_parent.ActualHeight,
-                hwndParent.Handle,
-                IntPtr.Zero,
-                IntPtr.Zero,
-                IntPtr.Zero);
-
-            _parent.InitializeOpenGL(_hwnd);
-            return new HandleRef(this, _hwnd);
-        }
-
-        protected override void DestroyWindowCore(HandleRef hwnd)
-        {
-            _parent.CleanupOpenGL();
-            DestroyWindow(hwnd.Handle);
-        }
-
-        protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
-        {
-            base.OnRenderSizeChanged(sizeInfo);
-            _parent.OnResize((int)sizeInfo.NewSize.Width, (int)sizeInfo.NewSize.Height);
-        }
-    }
+    // OpenGLHost 已提取为独立类，参见 OpenGLHost.cs
 
     #endregion
 
     #region OpenGL 初始化和清理
 
-    private void InitializeOpenGL(IntPtr hwnd)
+    /// <summary>
+    /// 初始化 OpenGL 环境，创建渲染上下文并配置着色器等资源。
+    /// </summary>
+    /// <param name="hwnd">要绑定 OpenGL 的窗口句柄。</param>
+    /// <exception cref="Exception">当设备上下文、像素格式或上下文创建失败时抛出。</exception>
+    internal void InitializeOpenGL(IntPtr hwnd)
     {
-        _hDC = GetDC(hwnd);
+        _hDC = Win32Interop.GetDC(hwnd);
         if (_hDC == IntPtr.Zero)
             throw new Exception("Failed to get device context");
 
-        var pfd = new PIXELFORMATDESCRIPTOR
+        var pfd = new Win32Interop.PIXELFORMATDESCRIPTOR
         {
-            nSize = (ushort)Marshal.SizeOf<PIXELFORMATDESCRIPTOR>(),
+            nSize = (ushort)Marshal.SizeOf<Win32Interop.PIXELFORMATDESCRIPTOR>(),
             nVersion = 1,
-            dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
-            iPixelType = PFD_TYPE_RGBA,
+            dwFlags = Win32Interop.PFD_DRAW_TO_WINDOW | Win32Interop.PFD_SUPPORT_OPENGL | Win32Interop.PFD_DOUBLEBUFFER,
+            iPixelType = Win32Interop.PFD_TYPE_RGBA,
             cColorBits = 32,
             cDepthBits = 24,
             cStencilBits = 8,
-            iLayerType = PFD_MAIN_PLANE
+            iLayerType = Win32Interop.PFD_MAIN_PLANE
         };
 
-        int pixelFormat = ChoosePixelFormat(_hDC, ref pfd);
+        int pixelFormat = Win32Interop.ChoosePixelFormat(_hDC, ref pfd);
         if (pixelFormat == 0)
             throw new Exception("Failed to choose pixel format");
 
-        if (!SetPixelFormat(_hDC, pixelFormat, ref pfd))
+        if (!Win32Interop.SetPixelFormat(_hDC, pixelFormat, ref pfd))
             throw new Exception("Failed to set pixel format");
 
-        _hGLRC = wglCreateContext(_hDC);
+        _hGLRC = Win32Interop.wglCreateContext(_hDC);
         if (_hGLRC == IntPtr.Zero)
             throw new Exception("Failed to create OpenGL context");
 
-        if (!wglMakeCurrent(_hDC, _hGLRC))
+        if (!Win32Interop.wglMakeCurrent(_hDC, _hGLRC))
             throw new Exception("Failed to make OpenGL context current");
 
         // 使用 Silk.NET 加载 OpenGL
@@ -579,19 +472,22 @@ void main()
 
     private nint GetProcAddressFunc(string name)
     {
-        var addr = wglGetProcAddress(name);
+        var addr = Win32Interop.wglGetProcAddress(name);
         if (addr != IntPtr.Zero)
             return addr;
 
-        var opengl32 = LoadLibrary("opengl32.dll");
-        return GetProcAddress(opengl32, name);
+        var opengl32 = Win32Interop.LoadLibrary("opengl32.dll");
+        return Win32Interop.GetProcAddress(opengl32, name);
     }
 
-    private void CleanupOpenGL()
+    /// <summary>
+    /// 清理 OpenGL 资源，删除缓冲、程序、纹理等，并销毁上下文。
+    /// </summary>
+    internal void CleanupOpenGL()
     {
         if (_gl != null && _isInitialized)
         {
-            wglMakeCurrent(_hDC, _hGLRC);
+            Win32Interop.wglMakeCurrent(_hDC, _hGLRC);
 
             _gl.DeleteVertexArray(_vao);
             _gl.DeleteBuffer(_vbo);
@@ -660,14 +556,23 @@ void main()
 
         if (_hGLRC != IntPtr.Zero)
         {
-            wglMakeCurrent(IntPtr.Zero, IntPtr.Zero);
-            wglDeleteContext(_hGLRC);
+            Win32Interop.wglMakeCurrent(IntPtr.Zero, IntPtr.Zero);
+            Win32Interop.wglDeleteContext(_hGLRC);
             _hGLRC = IntPtr.Zero;
         }
 
         _isInitialized = false;
     }
 
+    /// <summary>
+    /// 初始化着色器程序，包括点云渲染着色器和 ROI 覆盖层着色器。
+    /// 
+    /// 编译并链接两个着色器程序：
+    /// 1. 主着色器程序：用于 3D 点云、坐标系和网格的渲染，支持模型、视图、投影矩阵变换
+    /// 2. 覆盖层着色器程序：用于屏幕空间的 ROI 矩形渲染，使用 NDC 坐标
+    /// 
+    /// 着色器包含位置和颜色顶点属性，输出带颜色的像素。
+    /// </summary>
     private unsafe void InitializeShaders()
     {
         if (_gl == null) return;
@@ -751,6 +656,12 @@ void main()
         _gl.DeleteShader(overlayFragmentShader);
     }
 
+    /// <summary>
+    /// 初始化文本渲染着色器程序。
+    /// 
+    /// 用于在右上角渲染鼠标世界坐标文本。着色器使用正交投影处理像素坐标的顶点，
+    /// 并通过纹理采样绘制文本字形。支持 Alpha 混合以实现文本透明效果。
+    /// </summary>
     private unsafe void InitializeTextShaders()
     {
         if (_gl == null) return;
@@ -795,6 +706,16 @@ void main()
         _gl.DeleteShader(textFragmentShader);
     }
 
+    /// <summary>
+    /// 初始化顶点缓冲对象 (VAO/VBO)，用于存储和管理点云数据。
+    /// 
+    /// 创建一个 VAO 和 VBO，配置顶点属性指针：
+    /// - 位置属性 (location=0)：每个顶点 3 个浮点数 (X, Y, Z)
+    /// - 颜色属性 (location=1)：每个顶点 4 个浮点数 (R, G, B, A)
+    /// - 顶点跨度：7 个浮点数 (56 字节)
+    /// 
+    /// VBO 使用动态绘制用法 (DynamicDraw)，支持实时数据更新。
+    /// </summary>
     private unsafe void InitializeBuffers()
     {
         if (_gl == null) return;
@@ -817,6 +738,12 @@ void main()
         _gl.BindVertexArray(0);
     }
 
+    /// <summary>
+    /// 创建坐标系轴线和 XY 平面网格的初始化。
+    /// 
+    /// 坐标系：三条轴线从原点出发，X 红、Y 绿、Z 蓝，长度各为 1.0 单位。
+    /// 网格：XY 平面 (Z=0) 的网格线，范围和间距根据摄像机缩放动态调整。
+    /// </summary>
     private unsafe void CreateCoordinateAxisAndGrid()
     {
         if (_gl == null) return;
@@ -827,6 +754,16 @@ void main()
         // 网格在 Render 中动态生成
     }
 
+    /// <summary>
+    /// 创建坐标系轴线的 VAO/VBO，包含 X、Y、Z 三条轴线。
+    /// 
+    /// 轴线定义：
+    /// - X 轴（红色）：从 (0,0,0) 到 (1,0,0)
+    /// - Y 轴（绿色）：从 (0,0,0) 到 (0,1,0)
+    /// - Z 轴（蓝色）：从 (0,0,0) 到 (0,0,1)
+    /// 
+    /// 每条轴线由 2 个顶点组成，共 6 个顶点。使用线段模式 (GL_LINES) 绘制。
+    /// </summary>
     private unsafe void CreateCoordinateAxis()
     {
         if (_gl == null) return;
@@ -873,6 +810,20 @@ void main()
         _gl.BindVertexArray(0);
     }
 
+    /// <summary>
+    /// 动态更新 XY 平面网格的顶点数据。
+    /// 
+    /// 网格特性：
+    /// - 位置：XY 平面，Z = 0
+    /// - 范围：根据参数 gridRange 对称分布在 [-gridRange, gridRange]
+    /// - 间距：0.1 单位固定间距
+    /// - 颜色：浅灰色 (0.7, 0.7, 0.7)，透明度 30%
+    /// - 更新频率：每帧调用，支持随摄像机缩放动态调整网格覆盖范围
+    /// 
+    /// 网格由平行于 X 轴和 Y 轴的直线组成，共 4 个顶点（2 个端点）。
+    /// 使用 DynamicDraw 缓冲用法以支持频繁更新。
+    /// </summary>
+    /// <param name="gridRange">网格范围，决定网格的最大延伸距离。</param>
     private unsafe void UpdateXYGrid(float gridRange)
     {
         if (_gl == null) return;
@@ -965,7 +916,7 @@ void main()
     {
         if (_gl == null || !_isInitialized || Points == null) return;
 
-        wglMakeCurrent(_hDC, _hGLRC);
+        Win32Interop.wglMakeCurrent(_hDC, _hGLRC);
 
         var points = Points;
         _vertexCount = points.Count;
@@ -1001,11 +952,29 @@ void main()
 
     #region 渲染
 
+    /// <summary>
+    /// 核心渲染循环，每帧调用一次以绘制完整的场景。
+    /// 
+    /// 渲染步骤：
+    /// 1. 激活 OpenGL 上下文（wglMakeCurrent）
+    /// 2. 设置视口和清除背景颜色
+    /// 3. 启用深度测试和点大小设置
+    /// 4. 计算模型、视图、投影矩阵并应用旋转变换
+    /// 5. 按顺序绘制：
+    ///    - 坐标系轴线（如果启用）
+    ///    - XY 平面网格（如果启用）
+    ///    - 点云数据
+    ///    - ROI 矩形（如果正在绘制）
+    ///    - 文本覆盖层（鼠标世界坐标）
+    /// 6. 交换前后缓冲区（SwapBuffers）
+    /// 
+    /// 用于 60 FPS 渲染循环，由 DispatcherTimer 每 16ms 触发一次。
+    /// </summary>
     private unsafe void Render()
     {
         if (_gl == null || !_isInitialized) return;
 
-        wglMakeCurrent(_hDC, _hGLRC);
+        Win32Interop.wglMakeCurrent(_hDC, _hGLRC);
 
         int width = (int)ActualWidth;
         int height = (int)ActualHeight;
@@ -1082,7 +1051,7 @@ void main()
         // 绘制右上角鼠标位置信息覆盖层
         DrawOverlay(width, height);
 
-        SwapBuffers(_hDC);
+        Win32Interop.SwapBuffers(_hDC);
     }
 
     private unsafe void DrawRoiRectangle()
@@ -1231,6 +1200,21 @@ void main()
     /// <summary>
     /// 使用 FormattedText 生成文本的位图纹理
     /// </summary>
+    /// <summary>
+    /// 使用 WPF FormattedText 生成文本纹理。
+    /// 
+    /// 流程：
+    /// 1. 使用指定字体和颜色通过 WPF FormattedText 渲染文本
+    /// 2. 绘制到 RenderTargetBitmap，分辨率 96 DPI
+    /// 3. 纹理大小填充为 2 的幂以满足 OpenGL 要求
+    /// 4. 将像素数据从 PBGRA 格式转换为 RGBA 格式
+    /// 5. 创建 OpenGL 纹理并上传像素数据
+    /// 
+    /// 文本颜色为石灰绿 (Lime Green)。
+    /// </summary>
+    /// <param name="text">要渲染的文本字符串。</param>
+    /// <param name="fontSize">字体大小，单位为点 (pt)。</param>
+    /// <returns>创建的 OpenGL 纹理 ID。调用者需负责删除纹理资源。</returns>
     private unsafe uint CreateTextTexture(string text, int fontSize = 14)
     {
         // 使用 WPF 的 FormattedText 生成文本位图 - 文本颜色为绿色
@@ -1297,6 +1281,25 @@ void main()
     /// <param name="fontSize">字体大小（像素）</param>
     /// <param name="windowWidth">窗口宽度</param>
     /// <param name="windowHeight">窗口高度</param>
+    /// <summary>
+    /// 在屏幕上绘制文本到指定像素坐标。
+    /// 
+    /// 功能流程：
+    /// 1. 生成文本纹理（大小向上对齐到 2 的幂）
+    /// 2. 构建屏幕空间矩形的四个顶点（左上角为起点）
+    /// 3. 使用正交投影矩阵将像素坐标转换为 NDC 坐标
+    /// 4. 启用 Alpha 混合实现透明效果
+    /// 5. 绘制纹理映射的四边形
+    /// 6. 清理临时纹理资源
+    /// 
+    /// 文本颜色为绿色 (0, 1, 0)。
+    /// </summary>
+    /// <param name="text">要绘制的文本。</param>
+    /// <param name="pixelX">屏幕 X 坐标（像素单位），向右为正。</param>
+    /// <param name="pixelY">屏幕 Y 坐标（像素单位），向下为正。</param>
+    /// <param name="fontSize">字体大小（像素单位）。</param>
+    /// <param name="windowWidth">窗口总宽度（像素）。</param>
+    /// <param name="windowHeight">窗口总高度（像素）。</param>
     private unsafe void DrawText(string text, float pixelX, float pixelY, float fontSize, int windowWidth, int windowHeight)
     {
         if (_gl == null || _textShaderProgram == 0)
@@ -1513,6 +1516,23 @@ void main()
         }
     }
 
+    /// <summary>
+    /// 创建视图矩阵（LookAt 矩阵）。
+    /// 
+    /// 根据摄像机位置、目标位置和向上向量构造视图矩阵，将世界坐标转换到摄像机坐标系。
+    /// 
+    /// 算法：
+    /// 1. 计算 Z 轴（摄像机到目标的反方向）：zAxis = normalize(eye - target)
+    /// 2. 计算 X 轴（右向量）：xAxis = normalize(cross(up, zAxis))
+    /// 3. 计算 Y 轴（真实向上向量）：yAxis = cross(zAxis, xAxis)
+    /// 4. 构造 4x4 矩阵并设置平移分量
+    /// 
+    /// 这是标准的 OpenGL 视图矩阵构造方法。
+    /// </summary>
+    /// <param name="eye">摄像机位置。</param>
+    /// <param name="target">摄像机看向的目标点。</param>
+    /// <param name="up">摄像机的向上向量。</param>
+    /// <returns>视图矩阵。</returns>
     private static Matrix4x4 CreateLookAtMatrix(Vector3 eye, Vector3 target, Vector3 up)
     {
         var zAxis = Vector3.Normalize(eye - target);
@@ -1527,6 +1547,24 @@ void main()
         );
     }
 
+    /// <summary>
+    /// 创建透视投影矩阵。
+    /// 
+    /// 根据视角、宽高比、近远平面距离构造透视投影矩阵，
+    /// 将摄像机坐标转换为裁剪空间坐标用于光栅化。
+    /// 
+    /// 参数：
+    /// - fov：视场角（弧度制），即摄像机竖直方向的可见角度
+    /// - aspect：宽高比 (width/height)
+    /// - near/far：近远平面距离，应 > 0 且 near < far
+    /// 
+    /// 这是标准的 OpenGL 透视矩阵构造方法。
+    /// </summary>
+    /// <param name="fov">视场角（弧度）。</param>
+    /// <param name="aspect">宽高比（width/height）。</param>
+    /// <param name="near">近平面距离。</param>
+    /// <param name="far">远平面距离。</param>
+    /// <returns>透视投影矩阵。</returns>
     private static Matrix4x4 CreatePerspectiveMatrix(float fov, float aspect, float near, float far)
     {
         float tanHalfFov = MathF.Tan(fov / 2f);
@@ -1538,11 +1576,16 @@ void main()
         );
     }
 
-    private void OnResize(int width, int height)
+    /// <summary>
+    /// 处理控件大小变化，调整 OpenGL 视口。
+    /// </summary>
+    /// <param name="width">新的宽度（像素）。</param>
+    /// <param name="height">新的高度（像素）。</param>
+    internal void OnResize(int width, int height)
     {
         if (_gl != null && _isInitialized && width > 0 && height > 0)
         {
-            wglMakeCurrent(_hDC, _hGLRC);
+            Win32Interop.wglMakeCurrent(_hDC, _hGLRC);
             _gl.Viewport(0, 0, (uint)width, (uint)height);
             Render();
         }
@@ -1696,6 +1739,21 @@ void main()
     /// <summary>
     /// 将屏幕坐标转换为世界坐标（沿着摄像机看向平面投影）
     /// </summary>
+    /// <summary>
+    /// 将屏幕坐标转换为世界坐标。
+    /// 
+    /// 转换算法：
+    /// 1. 屏幕坐标 → NDC 坐标：x' = x/width*2 - 1，y' = 1 - y/height*2
+    /// 2. 计算 MVP 矩阵的逆矩阵
+    /// 3. 在近平面 (z=-1) 处应用逆矩阵变换
+    /// 4. 透视除法 (x/w, y/w, z/w) 得到世界坐标
+    /// 
+    /// 此方法用于获取鼠标在三维空间中的位置，用于显示鼠标坐标和交互。
+    /// </summary>
+    /// <param name="screenPos">屏幕上的鼠标位置（像素坐标）。</param>
+    /// <param name="width">渲染窗口宽度（像素）。</param>
+    /// <param name="height">渲染窗口高度（像素）。</param>
+    /// <returns>世界坐标中的位置向量。矩阵不可逆时返回 Vector3.Zero。</returns>
     private Vector3 ScreenToWorld(Point screenPos, int width, int height)
     {
         // 将屏幕坐标转换为 NDC 坐标 (-1 到 1)
@@ -1775,6 +1833,22 @@ void main()
     /// </summary>
     /// <param name="positions">点的位置数组 (x, y, z, x, y, z, ...)</param>
     /// <param name="defaultColor">默认颜色</param>
+    /// <summary>
+    /// 从浮点数组加载点云数据。
+    /// 
+    /// 输入格式：浮点数数组，连续存储点的 (x, y, z) 坐标。
+    /// 转换流程：每 3 个浮点数作为一个点的位置，使用 defaultColor 作为颜色。
+    /// 
+    /// 示例：
+    /// <code>
+    /// float[] positions = { 0, 0, 0,  1, 0, 0,  0, 1, 0 }; // 3 个点
+    /// viewer.LoadFromFloatArray(positions, new Vector4(1, 1, 1, 1)); // 白色
+    /// </code>
+    /// 
+    /// 调用此方法会触发 UpdatePointCloudBuffer 以更新 OpenGL 缓冲。
+    /// </summary>
+    /// <param name="positions">点位置的浮点数数组，格式为 [x1, y1, z1, x2, y2, z2, ...]。</param>
+    /// <param name="defaultColor">所有点的颜色。如为 null 则使用白色 (1, 1, 1, 1)。</param>
     public void LoadFromFloatArray(float[] positions, Vector4? defaultColor = null)
     {
         var color = defaultColor ?? new Vector4(1, 1, 1, 1);
@@ -1795,6 +1869,26 @@ void main()
     /// </summary>
     /// <param name="positions">点的位置列表</param>
     /// <param name="defaultColor">默认颜色</param>
+    /// <summary>
+    /// 从 Vector3 列表加载点云数据。
+    /// 
+    /// 输入为 Vector3 位置集合，所有点使用 defaultColor 作为颜色。
+    /// 
+    /// 示例：
+    /// <code>
+    /// var positions = new List&lt;Vector3&gt;
+    /// {
+    ///     new(0, 0, 0),
+    ///     new(1, 0, 0),
+    ///     new(0, 1, 0)
+    /// };
+    /// viewer.LoadFromVector3List(positions, new Vector4(1, 0, 0, 1)); // 红色
+    /// </code>
+    /// 
+    /// 调用此方法会触发点云缓冲更新和重新渲染。
+    /// </summary>
+    /// <param name="positions">点位置的 Vector3 列表。</param>
+    /// <param name="defaultColor">所有点的颜色。如为 null 则使用白色 (1, 1, 1, 1)。</param>
     public void LoadFromVector3List(List<Vector3> positions, Vector4? defaultColor = null)
     {
         var color = defaultColor ?? new Vector4(1, 1, 1, 1);
@@ -1804,6 +1898,17 @@ void main()
 
     /// <summary>
     /// 重置相机视图
+    /// </summary>
+    /// <summary>
+    /// 重置摄像机视图到初始状态。
+    /// 
+    /// 重置参数：
+    /// - 旋转：X 和 Y 轴旋转都重置为 0
+    /// - 缩放：缩放因子 (zoom) 重置为 5.0
+    /// - 位置：摄像机位置重置为 (0, 0, 5)
+    /// - 目标：仍指向原点 (0, 0, 0)
+    /// 
+    /// 调用此方法后会立即触发重新渲染。
     /// </summary>
     public void ResetView()
     {
@@ -1816,6 +1921,20 @@ void main()
 
     /// <summary>
     /// 自动调整视图以适应所有点
+    /// </summary>
+    /// <summary>
+    /// 自动调整摄像机以显示所有点。
+    /// 
+    /// 算法：
+    /// 1. 计算点集的 AABB 包围盒（最小和最大坐标）
+    /// 2. 计算中心点和包围盒对角线长度
+    /// 3. 设置目标点为包围盒中心
+    /// 4. 设置缩放因子为对角线长度的 2 倍
+    /// 5. 重置旋转，摄像机沿 Z 轴方向观看
+    /// 
+    /// 调用此方法后会立即触发重新渲染。
+    /// 
+    /// 如果点集为空则不执行任何操作。
     /// </summary>
     public void FitToView()
     {

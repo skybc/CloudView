@@ -13,6 +13,13 @@ CloudView 是一个基于 WPF 的三维点云可视化应用程序，采用 .NET
 - ROI 区域选择
 - 摄像机系统和交互
 
+### [架构设计 (v2.0)](./modules/architecture.md)
+渲染模块的架构改进和设计模式：
+- Win32Interop 类设计
+- OpenGLHost 窗口托管
+- PointCloudViewer 控制逻辑
+- 模块依赖关系
+
 ## 项目结构
 
 ```
@@ -23,7 +30,9 @@ CloudView/
 │   └── ViewModels/         # MVVM ViewModel
 │
 ├── CloudView.Controls/     # 可重用 WPF 控件库
-│   ├── PointCloudViewer.cs # 核心渲染控件
+│   ├── PointCloudViewer.cs # 核心渲染控件（UI 与逻辑编排）
+│   ├── OpenGLHost.cs       # Win32 原生窗口托管类（新增）
+│   ├── Win32Interop.cs     # Win32 API 互操作封装（新增）
 │   ├── PointCloudData.cs   # 数据结构定义
 │   └── PointCloudViewer.xaml
 │
