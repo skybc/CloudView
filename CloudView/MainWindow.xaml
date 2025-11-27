@@ -1,0 +1,97 @@
+﻿<Window x:Class="CloudView.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:CloudView"
+        xmlns:controls="clr-namespace:CloudView.Controls;assembly=CloudView.Controls"
+        xmlns:vm="clr-namespace:CloudView.ViewModels"
+        mc:Ignorable="d"
+        Title="CloudView - 点云可视化" Height="600" Width="1000">
+    <Window.DataContext>
+        <vm:MainViewModel/>
+    </Window.DataContext>
+    
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="200"/>
+        </Grid.ColumnDefinitions>
+        
+        <!-- 点云显示区域 -->
+        <controls:PointCloudViewer x:Name="PointCloudViewer"
+                                   Grid.Column="0"
+                                   Points="{Binding Points}"
+                                   PointSize="{Binding PointSize}"
+                                   BackgroundColor="#1E1E1E"
+                                   RoiColor="#500078D7"
+                                   RoiBorderColor="#FF0078D7"
+                                   SelectedPoints="{Binding SelectedPoints, Mode=OneWayToSource}"
+                                   SelectedIndices="{Binding SelectedIndices, Mode=OneWayToSource}"/>
+        
+        <!-- 控制面板 -->
+        <Border Grid.Column="1" Background="#2D2D30" Padding="10">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="点云控制" FontSize="16" FontWeight="Bold" 
+                               Foreground="White" Margin="0,0,0,15"/>
+                    
+                    <!-- 生成点云按钮 -->
+                    <TextBlock Text="生成点云" Foreground="#CCCCCC" Margin="0,0,0,5"/>
+                    <Button Content="球形点云" Command="{Binding GenerateSamplePointCloudCommand}" 
+                            Margin="0,0,0,5" Padding="8,5"/>
+                    <Button Content="立方体点云" Command="{Binding GenerateCubePointCloudCommand}" 
+                            Margin="0,0,0,5" Padding="8,5"/>
+                    <Button Content="螺旋点云" Command="{Binding GenerateSpiralPointCloudCommand}" 
+                            Margin="0,0,0,15" Padding="8,5"/>
+                    
+                    <!-- 点大小控制 -->
+                    <TextBlock Text="点大小" Foreground="#CCCCCC" Margin="0,0,0,5"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
+                        <Button Content="-" Width="40" Command="{Binding DecreasePointSizeCommand}" 
+                                Margin="0,0,5,0" Padding="5"/>
+                        <TextBlock Text="{Binding PointSize, StringFormat={}{0:F1}}" 
+                                   VerticalAlignment="Center" Width="40" TextAlignment="Center"
+                                   Foreground="White"/>
+                        <Button Content="+" Width="40" Command="{Binding IncreasePointSizeCommand}" 
+                                Margin="5,0,0,0" Padding="5"/>
+                    </StackPanel>
+                    
+                    <!-- 视图控制 -->
+                    <TextBlock Text="视图控制" Foreground="#CCCCCC" Margin="0,0,0,5"/>
+                    <Button Content="重置视图" Click="ResetView_Click" 
+                            Margin="0,0,0,5" Padding="8,5"/>
+                    <Button Content="适应视图" Click="FitToView_Click" 
+                            Margin="0,0,0,15" Padding="8,5"/>
+                    
+                    <!-- 选择信息 -->
+                    <TextBlock Text="选择信息" Foreground="#CCCCCC" Margin="0,0,0,5"/>
+                    <Border Background="#3C3C3C" Padding="10" CornerRadius="4">
+                        <StackPanel>
+                            <TextBlock Foreground="#AAAAAA">
+                                <Run Text="选中点数: "/>
+                                <Run Text="{Binding SelectedPointCount}" Foreground="#4EC9B0"/>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- 操作说明 -->
+                    <TextBlock Text="操作说明" Foreground="#CCCCCC" Margin="0,20,0,5"/>
+                    <Border Background="#3C3C3C" Padding="10" CornerRadius="4">
+                        <TextBlock Foreground="#AAAAAA" TextWrapping="Wrap" FontSize="11">
+                            <Run Text="• 左键拖拽: 绘制 ROI 选择区域"/><LineBreak/>
+                            <Run Text="• 右键拖拽: 旋转视图"/><LineBreak/>
+                            <Run Text="• 滚轮: 缩放视图"/>
+                        </TextBlock>
+                    </Border>
+                    
+                    <!-- 状态信息 -->
+                    <TextBlock Text="{Binding StatusMessage}" 
+                               Foreground="#4EC9B0" 
+                               TextWrapping="Wrap"
+                               Margin="0,15,0,0"/>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</Window>
