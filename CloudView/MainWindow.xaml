@@ -45,6 +45,15 @@
                     <Button Content="螺旋点云" Command="{Binding GenerateSpiralPointCloudCommand}" 
                             Margin="0,0,0,15" Padding="8,5"/>
                     
+                    <!-- 测试按钮 -->
+                    <TextBlock Text="测试（中心定位）" Foreground="#CCCCCC" Margin="0,0,0,5"/>
+                    <Button Content="测试点云（中心原点）" Command="{Binding GenerateTestPointCloudCommand}" 
+                            Margin="0,0,0,5" Padding="8,5" Background="#3C7D3C"/>
+                    <Button Content="测试点云（中心偏移）" Command="{Binding GenerateOffsetTestPointCloudCommand}" 
+                            Margin="0,0,0,5" Padding="8,5" Background="#3C7D3C"/>
+                    <Button Content="测试点云中心计算" Command="{Binding TestPointCloudCenterCommand}" 
+                            Margin="0,0,0,15" Padding="8,5" Background="#3C5D7D"/>
+                    
                     <!-- 点大小控制 -->
                     <TextBlock Text="点大小" Foreground="#CCCCCC" Margin="0,0,0,5"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
@@ -63,6 +72,11 @@
                             Margin="0,0,0,5" Padding="8,5"/>
                     <Button Content="适应视图" Click="FitToView_Click" 
                             Margin="0,0,0,15" Padding="8,5"/>
+                    
+                    <!-- 旋转测试 -->
+                    <TextBlock Text="旋转测试" Foreground="#CCCCCC" Margin="0,0,0,5"/>
+                    <Button x:Name="TestRotationButton" Content="旋转中心测试说明" 
+                            Click="TestRotationCenter_Click" Margin="0,0,0,15" Padding="8,5" Background="#7D3C3C"/>
                     
                     <!-- 选择信息 -->
                     <TextBlock Text="选择信息" Foreground="#CCCCCC" Margin="0,0,0,5"/>

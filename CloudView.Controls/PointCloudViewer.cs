@@ -266,6 +266,9 @@ public partial class PointCloudViewer : Control
     private float _rotationY;
     private float _zoom = 5.0f;
 
+    // 点云中心
+    private Vector3 _pointCloudCenter = Vector3.Zero;
+
     // 鼠标交互
     private bool _isRotating;
     private bool _isDrawingRoi;
@@ -758,32 +761,33 @@ void main()
     /// 创建坐标系轴线的 VAO/VBO，包含 X、Y、Z 三条轴线。
     /// 
     /// 轴线定义：
-    /// - X 轴（红色）：从 (0,0,0) 到 (1,0,0)
-    /// - Y 轴（绿色）：从 (0,0,0) 到 (0,1,0)
-    /// - Z 轴（蓝色）：从 (0,0,0) 到 (0,0,1)
+    /// - X 轴（红色）：从中心位置到中心 + (1,0,0)
+    /// - Y 轴（绿色）：从中心位置到中心 + (0,1,0)
+    /// - Z 轴（蓝色）：从中心位置到中心 + (0,0,1)
     /// 
     /// 每条轴线由 2 个顶点组成，共 6 个顶点。使用线段模式 (GL_LINES) 绘制。
+    /// 中心位置通过 _pointCloudCenter 定义。
     /// </summary>
     private unsafe void CreateCoordinateAxis()
     {
         if (_gl == null) return;
 
         // 坐标系轴线：X轴(红), Y轴(绿), Z轴(蓝)
-        // 每条轴线长度为 1.0，从原点出发
+        // 每条轴线长度为 1.0，从点云中心出发
         const float axisLength = 1.0f;
         var axisVertices = new float[]
         {
             // X 轴 (红色)
-            0, 0, 0, 1, 0, 0, 1,  // 起点
-            axisLength, 0, 0, 1, 0, 0, 1,  // 终点
+            _pointCloudCenter.X, _pointCloudCenter.Y, _pointCloudCenter.Z, 1, 0, 0, 1,  // 起点
+            _pointCloudCenter.X + axisLength, _pointCloudCenter.Y, _pointCloudCenter.Z, 1, 0, 0, 1,  // 终点
 
             // Y 轴 (绿色)
-            0, 0, 0, 0, 1, 0, 1,  // 起点
-            0, axisLength, 0, 0, 1, 0, 1,  // 终点
+            _pointCloudCenter.X, _pointCloudCenter.Y, _pointCloudCenter.Z, 0, 1, 0, 1,  // 起点
+            _pointCloudCenter.X, _pointCloudCenter.Y + axisLength, _pointCloudCenter.Z, 0, 1, 0, 1,  // 终点
 
             // Z 轴 (蓝色)
-            0, 0, 0, 0, 0, 1, 1,  // 起点
-            0, 0, axisLength, 0, 0, 1, 1,  // 终点
+            _pointCloudCenter.X, _pointCloudCenter.Y, _pointCloudCenter.Z, 0, 0, 1, 1,  // 起点
+            _pointCloudCenter.X, _pointCloudCenter.Y, _pointCloudCenter.Z + axisLength, 0, 0, 1, 1,  // 终点
         };
 
         _axisVertexCount = 6;
@@ -814,13 +818,14 @@ void main()
     /// 动态更新 XY 平面网格的顶点数据。
     /// 
     /// 网格特性：
-    /// - 位置：XY 平面，Z = 0
-    /// - 范围：根据参数 gridRange 对称分布在 [-gridRange, gridRange]
+    /// - 位置：XY 平面，Z = 中心点的 Z 坐标
+    /// - 范围：根据参数 gridRange 对称分布在中心点周围 [-gridRange, gridRange]
     /// - 间距：0.1 单位固定间距
     /// - 颜色：浅灰色 (0.7, 0.7, 0.7)，透明度 30%
     /// - 更新频率：每帧调用，支持随摄像机缩放动态调整网格覆盖范围
     /// 
-    /// 网格由平行于 X 轴和 Y 轴的直线组成，共 4 个顶点（2 个端点）。
+    /// 网格由平行于 X 轴和 Y 轴的直线组成。
+    /// 中心位置通过 _pointCloudCenter 定义。
     /// 使用 DynamicDraw 缓冲用法以支持频繁更新。
     /// </summary>
     /// <param name="gridRange">网格范围，决定网格的最大延伸距离。</param>
@@ -828,7 +833,7 @@ void main()
     {
         if (_gl == null) return;
 
-        // 创建 XY 平面网格 (Z = 0)
+        // 创建 XY 平面网格，中心为点云中心
         // 网格间距固定，范围根据摄像机缩放动态调整
         const float gridSpacing = 0.1f;
         const float gridAlpha = 0.3f;  // 浅色
@@ -842,18 +847,18 @@ void main()
         for (float y = -gridRange; y <= gridRange; y += gridSpacing)
         {
             // 起点
-            gridVertices.Add(-gridRange);
-            gridVertices.Add(y);
-            gridVertices.Add(0);
+            gridVertices.Add(_pointCloudCenter.X - gridRange);
+            gridVertices.Add(_pointCloudCenter.Y + y);
+            gridVertices.Add(_pointCloudCenter.Z);
             gridVertices.Add(gridR);
             gridVertices.Add(gridG);
             gridVertices.Add(gridB);
             gridVertices.Add(gridAlpha);
 
             // 终点
-            gridVertices.Add(gridRange);
-            gridVertices.Add(y);
-            gridVertices.Add(0);
+            gridVertices.Add(_pointCloudCenter.X + gridRange);
+            gridVertices.Add(_pointCloudCenter.Y + y);
+            gridVertices.Add(_pointCloudCenter.Z);
             gridVertices.Add(gridR);
             gridVertices.Add(gridG);
             gridVertices.Add(gridB);
@@ -864,18 +869,18 @@ void main()
         for (float x = -gridRange; x <= gridRange; x += gridSpacing)
         {
             // 起点
-            gridVertices.Add(x);
-            gridVertices.Add(-gridRange);
-            gridVertices.Add(0);
+            gridVertices.Add(_pointCloudCenter.X + x);
+            gridVertices.Add(_pointCloudCenter.Y - gridRange);
+            gridVertices.Add(_pointCloudCenter.Z);
             gridVertices.Add(gridR);
             gridVertices.Add(gridG);
             gridVertices.Add(gridB);
             gridVertices.Add(gridAlpha);
 
             // 终点
-            gridVertices.Add(x);
-            gridVertices.Add(gridRange);
-            gridVertices.Add(0);
+            gridVertices.Add(_pointCloudCenter.X + x);
+            gridVertices.Add(_pointCloudCenter.Y + gridRange);
+            gridVertices.Add(_pointCloudCenter.Z);
             gridVertices.Add(gridR);
             gridVertices.Add(gridG);
             gridVertices.Add(gridB);
@@ -994,9 +999,6 @@ void main()
         var model = Matrix4x4.Identity;
         var view = CreateLookAtMatrix(_cameraPosition, _cameraTarget, _cameraUp);
         var projection = CreatePerspectiveMatrix(_fov * MathF.PI / 180f, (float)width / height, 0.1f, 1000f);
-
-        // 应用旋转
-        model = Matrix4x4.CreateRotationX(_rotationX) * Matrix4x4.CreateRotationY(_rotationY);
 
         _gl.UseProgram(_shaderProgram);
         SetUniformMatrix4(_gl, _shaderProgram, "uModel", model);
@@ -1122,10 +1124,10 @@ void main()
         float labelWidth = overlayWidthNdc * 0.35f;
         float valueWidth = overlayWidthNdc * 0.6f;
 
-        // 预计算数值（毫米）
-        float xMm = _currentMouseWorldPosition.X * 1000f;
-        float yMm = _currentMouseWorldPosition.Y * 1000f;
-        float zMm = _currentMouseWorldPosition.Z * 1000f;
+        // 直接使用点的坐标值（单位：mm）
+        float xMm = _currentMouseWorldPosition.X;
+        float yMm = _currentMouseWorldPosition.Y;
+        float zMm = _currentMouseWorldPosition.Z;
 
         // 预估一个范围，用于条形长度归一化（比如 ±1000mm）
         float rangeMm = 1000f;
@@ -1192,9 +1194,9 @@ void main()
         float startX = width - overlayWidthPx + marginRight;
         float startY = marginTop;
 
-        DrawText($"X: {xMm:F1} mm", startX, startY, fontSize, width, height);
-        DrawText($"Y: {yMm:F1} mm", startX, startY + lineSpacing, fontSize, width, height);
-        DrawText($"Z: {zMm:F1} mm", startX, startY + lineSpacing * 2, fontSize, width, height);
+        DrawText($"X: {xMm:F3} mm", startX, startY, fontSize, width, height);
+        DrawText($"Y: {yMm:F3} mm", startX, startY + lineSpacing, fontSize, width, height);
+        DrawText($"Z: {zMm:F3} mm", startX, startY + lineSpacing * 2, fontSize, width, height);
     }
 
     /// <summary>
@@ -1627,9 +1629,33 @@ void main()
             var delta = currentPos - _lastMousePosition;
             _rotationY += (float)delta.X * 0.01f;
             _rotationX += (float)delta.Y * 0.01f;
+            
+            // 围绕视野中心旋转摄像机
+            UpdateCameraPositionWithRotation();
+            
             _lastMousePosition = currentPos;
             Render();
         }
+    }
+
+    /// <summary>
+    /// 根据旋转角度更新摄像机位置。
+    /// 摄像机围绕 _cameraTarget（视野中心）进行旋转。
+    /// 使用球面坐标：相对于目标点的距离、水平角、竖直角。
+    /// </summary>
+    private void UpdateCameraPositionWithRotation()
+    {
+        // 获取摄像机到目标的向量
+        var direction = _cameraPosition - _cameraTarget;
+        float distance = direction.Length();
+
+        if (distance == 0) return;
+
+        // 应用旋转矩阵来更新摄像机位置
+        var rotationMatrix = Matrix4x4.CreateRotationX(_rotationX) * Matrix4x4.CreateRotationY(_rotationY);
+        var rotatedDirection = Vector3.Transform(new Vector3(0, 0, distance), rotationMatrix);
+        
+        _cameraPosition = _cameraTarget + rotatedDirection;
     }
 
     /// <summary>
@@ -1660,7 +1686,7 @@ void main()
                 int width = (int)ActualWidth;
                 int height = (int)ActualHeight;
 
-                var model = Matrix4x4.CreateRotationX(_rotationX) * Matrix4x4.CreateRotationY(_rotationY);
+                var model = Matrix4x4.Identity;
                 var view = CreateLookAtMatrix(_cameraPosition, _cameraTarget, _cameraUp);
                 var projection = CreatePerspectiveMatrix(_fov * MathF.PI / 180f, (float)width / height, 0.1f, 1000f);
                 var mvp = model * view * projection;
@@ -1709,7 +1735,24 @@ void main()
     {
         _zoom -= e.Delta * 0.005f;
         _zoom = Math.Clamp(_zoom, 1f, 50f);
-        _cameraPosition = new Vector3(0, 0, _zoom);
+        
+        // 保持当前旋转状态，根据当前方向更新摄像机位置
+        // 获取摄像机到目标点的当前方向（单位向量）
+        var direction = _cameraPosition - _cameraTarget;
+        float currentDistance = direction.Length();
+        
+        if (currentDistance > 0)
+        {
+            // 使用当前方向，只改变距离
+            var normalizedDirection = Vector3.Normalize(direction);
+            _cameraPosition = _cameraTarget + normalizedDirection * _zoom;
+        }
+        else
+        {
+            // 如果距离为0，使用默认Z轴方向
+            _cameraPosition = _cameraTarget + new Vector3(0, 0, _zoom);
+        }
+        
         Render();
     }
 
@@ -1761,7 +1804,7 @@ void main()
         float ndcY = -(float)(screenPos.Y / height * 2 - 1); // Y 轴翻转
 
         // 构建投影矩阵的逆矩阵
-        var model = Matrix4x4.CreateRotationX(_rotationX) * Matrix4x4.CreateRotationY(_rotationY);
+        var model = Matrix4x4.Identity;
         var view = CreateLookAtMatrix(_cameraPosition, _cameraTarget, _cameraUp);
         var projection = CreatePerspectiveMatrix(_fov * MathF.PI / 180f, (float)width / height, 0.1f, 1000f);
         var mvp = model * view * projection;
@@ -1809,6 +1852,18 @@ void main()
         if (d is PointCloudViewer viewer)
         {
             viewer.UpdatePointCloudBuffer();
+            
+            // 计算点云中心并调整视野
+            viewer._pointCloudCenter = viewer.CalculatePointCloudCenter();
+            viewer._cameraTarget = viewer._pointCloudCenter;
+            viewer._rotationX = 0;
+            viewer._rotationY = 0;
+            
+            // 重新创建坐标轴和网格以适应新的中心位置
+            if (viewer._isInitialized)
+            {
+                viewer.CreateCoordinateAxis();
+            }
         }
     }
 
@@ -1822,6 +1877,53 @@ void main()
             }
             viewer.Render();
         }
+    }
+
+    #endregion
+
+    #region 私有方法
+
+    /// <summary>
+    /// 计算点云的中心位置。
+    /// 
+    /// 算法：
+    /// 1. 遍历所有点，计算 X、Y、Z 坐标的最大最小值
+    /// 2. 计算中心点：((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2)
+    /// 3. 返回中心点坐标
+    /// 
+    /// 如果点集为空则返回 Vector3.Zero。
+    /// 
+    /// 此方法在 Points 属性更新时调用。
+    /// </summary>
+    /// <returns>点云的中心坐标。</returns>
+    private Vector3 CalculatePointCloudCenter()
+    {
+        if (Points == null || Points.Count == 0)
+        {
+            return Vector3.Zero;
+        }
+
+        float minX = float.MaxValue, maxX = float.MinValue;
+        float minY = float.MaxValue, maxY = float.MinValue;
+        float minZ = float.MaxValue, maxZ = float.MinValue;
+
+        foreach (var point in Points)
+        {
+            minX = Math.Min(minX, point.Position.X);
+            maxX = Math.Max(maxX, point.Position.X);
+            minY = Math.Min(minY, point.Position.Y);
+            maxY = Math.Max(maxY, point.Position.Y);
+            minZ = Math.Min(minZ, point.Position.Z);
+            maxZ = Math.Max(maxZ, point.Position.Z);
+        }
+
+        var center = new Vector3(
+            (minX + maxX) * 0.5f,
+            (minY + maxY) * 0.5f,
+            (minZ + maxZ) * 0.5f
+        );
+
+        return center;
     }
 
     #endregion
@@ -1906,7 +2008,7 @@ void main()
     /// - 旋转：X 和 Y 轴旋转都重置为 0
     /// - 缩放：缩放因子 (zoom) 重置为 5.0
     /// - 位置：摄像机位置重置为 (0, 0, 5)
-    /// - 目标：仍指向原点 (0, 0, 0)
+    /// - 目标：指向原点 (0, 0, 0)
     /// 
     /// 调用此方法后会立即触发重新渲染。
     /// </summary>
@@ -1915,6 +2017,7 @@ void main()
         _rotationX = 0;
         _rotationY = 0;
         _zoom = 5;
+        _cameraTarget = Vector3.Zero;
         _cameraPosition = new Vector3(0, 0, _zoom);
         Render();
     }

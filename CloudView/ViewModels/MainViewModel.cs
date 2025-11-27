@@ -172,4 +172,173 @@ public partial class MainViewModel : ObservableObject
 
         return (r + m, g + m, b + m);
     }
+
+    /// <summary>
+    /// 生成测试点云（用于测试点云中心计算）
+    /// 
+    /// 创建一个立方体表面的点云（所有6个面）：
+    /// - X: -1 到 1
+    /// - Y: -1 到 1  
+    /// - Z: -1 到 1
+    /// - 预期中心：(0, 0, 0)
+    /// - 共 600 个点（每面 100 个点）
+    /// </summary>
+    [RelayCommand]
+    private void GenerateTestPointCloud()
+    {
+        var points = new List<PointCloudPoint>();
+        const int pointsPerFace = 100;
+        const float size = 1.0f;
+
+        // 前面 (Z = -1)
+        AddCubeFace(points, pointsPerFace, size, 
+            (u, v) => new Vector3(u * size * 2 - size, v * size * 2 - size, -size),
+            new Vector4(1, 0, 0, 1)); // 红色
+
+        // 后面 (Z = 1)
+        AddCubeFace(points, pointsPerFace, size,
+            (u, v) => new Vector3(u * size * 2 - size, v * size * 2 - size, size),
+            new Vector4(0, 1, 0, 1)); // 绿色
+
+        // 左面 (X = -1)
+        AddCubeFace(points, pointsPerFace, size,
+            (u, v) => new Vector3(-size, u * size * 2 - size, v * size * 2 - size),
+            new Vector4(0, 0, 1, 1)); // 蓝色
+
+        // 右面 (X = 1)
+        AddCubeFace(points, pointsPerFace, size,
+            (u, v) => new Vector3(size, u * size * 2 - size, v * size * 2 - size),
+            new Vector4(1, 1, 0, 1)); // 黄色
+
+        // 下面 (Y = -1)
+        AddCubeFace(points, pointsPerFace, size,
+            (u, v) => new Vector3(u * size * 2 - size, -size, v * size * 2 - size),
+            new Vector4(1, 0, 1, 1)); // 紫色
+
+        // 上面 (Y = 1)
+        AddCubeFace(points, pointsPerFace, size,
+            (u, v) => new Vector3(u * size * 2 - size, size, v * size * 2 - size),
+            new Vector4(0, 1, 1, 1)); // 青色
+
+        Points = points;
+        StatusMessage = $"已加载测试点云（立方体表面，中心应在原点 (0,0,0)）\n共 {points.Count} 个点";
+    }
+
+    /// <summary>
+    /// 生成偏移的测试点云
+    /// 
+    /// 创建一个位置偏移的立方体表面：
+    /// - X: 10 到 20（中心 15）
+    /// - Y: 5 到 15（中心 10）
+    /// - Z: -5 到 5（中心 0）
+    /// - 预期中心：(15, 10, 0)
+    /// - 共 600 个点（每面 100 个点）
+    /// </summary>
+    [RelayCommand]
+    private void GenerateOffsetTestPointCloud()
+    {
+        var points = new List<PointCloudPoint>();
+        const int pointsPerFace = 100;
+        const float offsetX = 15.0f;
+        const float offsetY = 10.0f;
+        const float offsetZ = 0.0f;
+        const float size = 5.0f;  // 半边长
+
+        // 前面 (Z = 0 - 5)
+        AddCubeFace(points, pointsPerFace, size,
+            (u, v) => new Vector3(offsetX + u * size * 2 - size, offsetY + v * size * 2 - size, offsetZ - size),
+            new Vector4(1, 0, 0, 1)); // 红色
+
+        // 后面 (Z = 0 + 5)
+        AddCubeFace(points, pointsPerFace, size,
+            (u, v) => new Vector3(offsetX + u * size * 2 - size, offsetY + v * size * 2 - size, offsetZ + size),
+            new Vector4(0, 1, 0, 1)); // 绿色
+
+        // 左面 (X = 10)
+        AddCubeFace(points, pointsPerFace, size,
+            (u, v) => new Vector3(offsetX - size, offsetY + u * size * 2 - size, offsetZ + v * size * 2 - size),
+            new Vector4(0, 0, 1, 1)); // 蓝色
+
+        // 右面 (X = 20)
+        AddCubeFace(points, pointsPerFace, size,
+            (u, v) => new Vector3(offsetX + size, offsetY + u * size * 2 - size, offsetZ + v * size * 2 - size),
+            new Vector4(1, 1, 0, 1)); // 黄色
+
+        // 下面 (Y = 5)
+        AddCubeFace(points, pointsPerFace, size,
+            (u, v) => new Vector3(offsetX + u * size * 2 - size, offsetY - size, offsetZ + v * size * 2 - size),
+            new Vector4(1, 0, 1, 1)); // 紫色
+
+        // 上面 (Y = 15)
+        AddCubeFace(points, pointsPerFace, size,
+            (u, v) => new Vector3(offsetX + u * size * 2 - size, offsetY + size, offsetZ + v * size * 2 - size),
+            new Vector4(0, 1, 1, 1)); // 青色
+
+        Points = points;
+        StatusMessage = $"已加载偏移测试点云（中心应在 ({offsetX:F1}, {offsetY:F1}, {offsetZ:F1})）\n共 {points.Count} 个点";
+    }
+
+    /// <summary>
+    /// 为立方体的一个面添加点
+    /// </summary>
+    /// <param name="points">点列表</param>
+    /// <param name="pointCount">该面上的点数</param>
+    /// <param name="size">立方体半边长</param>
+    /// <param name="positionFunc">位置计算函数，参数为 (u, v)，其中 u,v 范围 0-1</param>
+    /// <param name="color">点的颜色</param>
+    private static void AddCubeFace(List<PointCloudPoint> points, int pointCount, float size, 
+        Func<float, float, Vector3> positionFunc, Vector4 color)
+    {
+        int pointsPerSide = (int)Math.Sqrt(pointCount);
+        
+        for (int i = 0; i < pointsPerSide; i++)
+        {
+            for (int j = 0; j < pointsPerSide; j++)
+            {
+                float u = (i + 0.5f) / pointsPerSide;  // 0.5 / n 到 (n-0.5) / n
+                float v = (j + 0.5f) / pointsPerSide;
+
+                var position = positionFunc(u, v);
+                points.Add(new PointCloudPoint(position, color));
+            }
+        }
+    }
+
+    /// <summary>
+    /// 测试点云中心计算结果
+    /// </summary>
+    [RelayCommand]
+    private void TestPointCloudCenter()
+    {
+        if (Points == null || Points.Count == 0)
+        {
+            StatusMessage = "❌ 测试失败：点云为空";
+            return;
+        }
+
+        // 手动计算中心
+        float minX = float.MaxValue, maxX = float.MinValue;
+        float minY = float.MaxValue, maxY = float.MinValue;
+        float minZ = float.MaxValue, maxZ = float.MinValue;
+
+        foreach (var point in Points)
+        {
+            minX = Math.Min(minX, point.Position.X);
+            maxX = Math.Max(maxX, point.Position.X);
+            minY = Math.Min(minY, point.Position.Y);
+            maxY = Math.Max(maxY, point.Position.Y);
+            minZ = Math.Min(minZ, point.Position.Z);
+            maxZ = Math.Max(maxZ, point.Position.Z);
+        }
+
+        var calculatedCenter = new Vector3(
+            (minX + maxX) * 0.5f,
+            (minY + maxY) * 0.5f,
+            (minZ + maxZ) * 0.5f
+        );
+
+        StatusMessage = $"✅ 计算点云中心成功\n" +
+                       $"中心坐标: ({calculatedCenter.X:F2}, {calculatedCenter.Y:F2}, {calculatedCenter.Z:F2})\n" +
+                       $"范围: X[{minX:F2},{maxX:F2}], Y[{minY:F2},{maxY:F2}], Z[{minZ:F2},{maxZ:F2}]";
+    }
 }

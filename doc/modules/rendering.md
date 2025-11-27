@@ -49,6 +49,11 @@ PointCloudViewer 是 CloudView.Controls 项目中的核心渲染控件，负责�
   - 窗口样式：WS_CHILD, WS_VISIBLE, WS_CLIPSIBLINGS, WS_CLIPCHILDREN
   - 像素格式描述符结构体 (PIXELFORMATDESCRIPTOR)
 
+#### 4. **PointCloudViewer 数据管理** ✨ 新增
+- **_pointCloudCenter**：存储计算出的点云中心坐标
+- **_cameraTarget**：摄像机看向的目标点，即视野中心
+- **_rotationX, _rotationY**：摄像机绕目标点的旋转角度
+
 ### 架构优势
 1. **关注点分离**：每个类职责明确，易于维护和测试
 2. **可复用性**：Win32Interop 可被其他项目或组件使用
@@ -64,30 +69,34 @@ PointCloudViewer 是 CloudView.Controls 项目中的核心渲染控件，负责�
 - 可配置的点大小
 
 ### 2. 坐标系显示 ✨ 新增
-显示三维空间中原点处的坐标系轴线：
-- **X 轴**：红色，长度 1.0
-- **Y 轴**：绿色，长度 1.0  
-- **Z 轴**：蓝色，长度 1.0
+显示三维空间中点云中心处的坐标系轴线：
+- **X 轴**：红色，长度 1.0，从点云中心出发
+- **Y 轴**：绿色，长度 1.0，从点云中心出发
+- **Z 轴**：蓝色，长度 1.0，从点云中心出发
 
 **依赖属性**：`ShowCoordinateAxis` (默认: true)
 
 **实现细节**：
 - 在 `CreateCoordinateAxis()` 方法中生成 6 个顶点（3 条线段）
+- 坐标轴的中心点为 `_pointCloudCenter`，即点云的 AABB 中心
 - 使用线段模式 (GL_LINES) 绘制
 - 线宽设置为 2.0，提高可见性
+- 当点云数据更新时，自动重新创建坐标轴以适应新的中心位置
 
 ### 3. XY 平面网格 ✨ 新增
-显示 XY 平面（Z=0）的网格，用于空间参考：
-- **范围**：动态调整，始终覆盖显示区域
+显示 XY 平面（平行于点云中心的 XY 平面）的网格，用于空间参考：
+- **范围**：动态调整，始终覆盖显示区域，以点云中心为中心对称展开
 - **间距**：0.1 单位（固定）
 - **颜色**：浅灰色 (RGB: 0.7, 0.7, 0.7)
 - **透明度**：30%
+- **Z 坐标**：等于点云中心的 Z 坐标
 
 **依赖属性**：`ShowGrid` (默认: true)
 
 **实现细节**：
 - 在 `UpdateXYGrid()` 方法中根据摄像机缩放参数 `_zoom` 动态生成网格顶点
 - 网格范围公式：`gridRange = _zoom * 0.5f`
+- 网格中心为 `_pointCloudCenter`，网格范围在 X、Y 方向上以中心对称展开
 - 每帧在 Render() 中重新生成，确保网格始终覆盖整个显示区域
 - X 方向线（平行于 X 轴）和 Y 方向线（平行于 Y 轴）
 - 使用 alpha 混合实现透明效果
@@ -100,10 +109,23 @@ PointCloudViewer 是 CloudView.Controls 项目中的核心渲染控件，负责�
 - 触发 RoiSelected 事件，返回选中的点索引和点集合
 
 ### 5. 摄像机系统
-- 支持 3D 旋转（右鼠标拖动）
+- 支持 3D 旋转（右鼠标拖动），围绕视野中心旋转
 - 支持缩放（鼠标滚轮）
 - 视图/投影矩阵自动管理
 - 支持自动调整视图以适应所有点 (FitToView)
+- **自动视野中心定位**：Points 更新后，自动计算点云中心并将视野中心设置到该位置
+
+**摄像机中心系统** ✨ 新增
+- 当 Points 数据更新时，系统自动计算点云中心（基于所有点的 X、Y、Z 坐标的最大最小值）
+- 将 `_cameraTarget` 设置为计算出的点云中心
+- 摄像机旋转围绕 `_cameraTarget` 进行，实现以点云中心为旋转轴的交互体验
+- 重置摄像机旋转角度为 0，使摄像机沿 Z 轴方向观看
+
+**实现细节**：
+- `CalculatePointCloudCenter()` 方法：遍历所有点，计算 AABB 的中心点
+- `UpdateCameraPositionWithRotation()` 方法：根据旋转角度更新摄像机位置，保持相对于目标点的距离不变
+- 旋转通过应用旋转矩阵到初始方向向量 (0, 0, distance) 来实现
+- 摄像机位置 = 目标点 + 旋转后的方向向量
 
 ### 6. 着色器管理
 - 顶点着色器：处理位置和颜色的变换
@@ -126,6 +148,9 @@ PointCloudViewer 是 CloudView.Controls 项目中的核心渲染控件，负责�
 ## 渲染流程
 
 ```
+OnPointsChanged() → UpdatePointCloudBuffer() → CalculatePointCloudCenter() → 
+  设置 _cameraTarget = 点云中心, 重置旋转
+  ↓
 Render() → Clear背景 → 设置矩阵和着色器 → 
   ├─ 绘制坐标系 (if ShowCoordinateAxis)
   ├─ 绘制网格 (if ShowGrid)
@@ -133,6 +158,13 @@ Render() → Clear背景 → 设置矩阵和着色器 →
   ├─ 绘制ROI矩形 (if 正在绘制)
   └─ 绘制文本覆盖层 (鼠标世界坐标)
   → SwapBuffers
+
+鼠标右键拖动旋转：
+  OnMouseRightButtonDown() → _isRotating=true
+    ↓
+  OnMouseMove() → 更新 _rotationX/_rotationY → UpdateCameraPositionWithRotation() → Render()
+    ↓
+  OnMouseRightButtonUp() → _isRotating=false
 ```
 
 ## 公共 API
@@ -153,6 +185,10 @@ Render() → Clear背景 → 设置矩阵和着色器 →
 - `LoadFromVector3List()`: 从 Vector3 列表加载点云
 - `ResetView()`: 重置相机视图
 - `FitToView()`: 自动调整视图以适应所有点
+
+### 私有方法 ✨ 新增
+- `CalculatePointCloudCenter()`: 计算并返回点云中心坐标，在 Points 更新时调用
+- `UpdateCameraPositionWithRotation()`: 根据旋转角度更新摄像机位置，使摄像机围绕目标点旋转
 
 ### 事件
 - `RoiSelected`: ROI 选择完成时触发
@@ -202,6 +238,67 @@ viewer.RoiSelected += (sender, args) =>
 - 坐标系轴线长度固定为 1.0，可在 `CreateCoordinateAxis()` 中修改
 - 网格线间距固定为 0.1 单位，可在 `UpdateXYGrid()` 方法中调整 `gridSpacing` 常数
 - 不支持 OpenGL 版本低于 3.3 的硬件
+
+## 最近更新 ✨
+
+### v2.3 - 坐标系和网格中心对齐改进
+- **功能改进**：
+  - 坐标轴中心点从原点 (0,0,0) 移至点云中心 (`_pointCloudCenter`)
+  - XY 平面网格中心从原点 (0,0,0) 移至点云中心 (`_pointCloudCenter`)
+  - 网格、坐标轴和摄像机中心完全对齐，提供一致的空间参考
+
+- **实现细节**：
+  - 修改 `CreateCoordinateAxis()` 方法，使三条轴线从 `_pointCloudCenter` 出发
+  - 修改 `UpdateXYGrid()` 方法，使网格以 `_pointCloudCenter` 为中心对称展开
+  - 在 `OnPointsChanged()` 中添加重新创建坐标轴的调用，确保每次点云更新时轴线位置同步更新
+
+- **受影响的方法**：
+  - `CreateCoordinateAxis()`: 使用 `_pointCloudCenter` 作为坐标轴原点
+  - `UpdateXYGrid()`: 使用 `_pointCloudCenter` 作为网格中心
+  - `OnPointsChanged()`: 添加 `CreateCoordinateAxis()` 调用以同步更新坐标轴位置
+
+### v2.2 - 摄像机缩放与旋转交互修复
+- **问题修复**：
+  - 修复右键旋转后使用滚轮缩放时视角跳动的问题
+  - 修复滚轮缩放后使用右键旋转时视角跳动的问题
+  - 修复缩放操作导致图像意外旋转的问题
+
+- **问题原因分析**：
+  - 原 `OnMouseWheel()` 方法直接将摄像机位置设置为 `(0, 0, _zoom)`
+  - 这会忽略当前的旋转状态和目标点位置
+  - 导致缩放时摄像机被强制重置到 Z 轴上，与旋转状态不一致
+
+- **解决方案**：
+  - 修改 `OnMouseWheel()` 方法，在缩放时保持当前的摄像机方向
+  - 获取摄像机到目标点的当前方向向量并归一化
+  - 使用归一化方向向量乘以新的距离值更新摄像机位置
+  - 确保缩放操作只改变距离，不改变观察方向
+
+- **受影响的方法**：
+  - `OnMouseWheel()`: 重写缩放逻辑，保持摄像机观察方向不变
+
+### v2.1 - 点云自动中心定位与旋转中心改进
+- **功能新增**：
+  - 实现点云自动中心定位：Points 更新后自动计算点云中心
+  - 摄像机旋转中心设置为视野中心（点云中心）
+  - 改进摄像机交互体验，旋转更加直观
+
+- **实现细节**：
+  - 新增 `_pointCloudCenter` 字段存储计算出的点云中心
+  - 新增 `CalculatePointCloudCenter()` 方法计算点云的 AABB 中心
+  - 新增 `UpdateCameraPositionWithRotation()` 方法实现围绕目标点的旋转
+  - 修改 `OnPointsChanged()` 回调在数据更新时自动调整视野中心和重置旋转
+  - 移除模型矩阵中的旋转变换，改为在摄像机位置计算中应用旋转
+
+- **受影响的方法**：
+  - `OnPointsChanged()`: 添加自动中心计算和摄像机目标设置
+  - `OnMouseMove()`: 添加 `UpdateCameraPositionWithRotation()` 调用实现围绕中心旋转
+  - `Render()`: 移除模型矩阵旋转，使用恒等矩阵
+  - `OnMouseLeftButtonUp()`: 更新矩阵计算，使用恒等模型矩阵
+  - `ScreenToWorld()`: 更新矩阵计算，使用恒等模型矩阵
+  - `ResetView()`: 添加 `_cameraTarget` 重置
+
+## 已知限制
 
 ## 常见问题
 
