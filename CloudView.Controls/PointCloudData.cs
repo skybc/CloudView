@@ -51,3 +51,25 @@ public class RoiSelectionEventArgs : RoutedEventArgs
         ScreenRect = screenRect;
     }
 }
+
+/// <summary>
+/// 鼠标位置事件参数
+/// </summary>
+public class MousePositionEventArgs : RoutedEventArgs
+{
+    /// <summary>
+    /// 鼠标在世界坐标中的位置
+    /// </summary>
+    public Vector3 WorldPosition { get; }
+
+    /// <summary>
+    /// 鼠标在屏幕上的位置
+    /// </summary>
+    public Point ScreenPosition { get; }
+
+    public MousePositionEventArgs(Vector3 worldPosition, Point screenPosition)
+    {
+        WorldPosition = worldPosition;
+        ScreenPosition = screenPosition;
+    }
+}
