@@ -116,6 +116,14 @@ internal static class Win32Interop
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern IntPtr LoadLibrary(string lpLibFileName);
 
+    /// <summary>
+    /// 释放已加载的动态链接库模块。
+    /// </summary>
+    /// <param name="hModule">要释放的模块句柄。</param>
+    /// <returns>成功返回 true，失败返回 false。</returns>
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool FreeLibrary(IntPtr hModule);
+
     #endregion
 
     #region 像素格式描述符结构

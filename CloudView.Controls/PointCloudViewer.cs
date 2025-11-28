@@ -25,13 +25,13 @@ namespace CloudView.Controls;
 /// - 双缓冲 OpenGL 渲染，60 FPS 渲染循环
 /// 
 /// 架构说明：
-/// - 继承自 WPF 控件基类 (Control)
+/// - 继承自 WPF 控件基类 (Control)，实现 IDisposable 以确保资源安全释放
 /// - 使用 OpenGLHost (HwndHost) 在 WPF 中托管原生 Win32 窗口以进行 OpenGL 渲染
 /// - 与 Win32Interop 合作管理原生 API 调用
 /// - 采用依赖属性 (DependencyProperty) 实现 MVVM 数据绑定
 /// - 事件驱动模式用于用户交互通知 (ROI 选择、鼠标位置)
 /// </summary>
-public partial class PointCloudViewer : Control
+public partial class PointCloudViewer : Control, IDisposable
 {
     static PointCloudViewer()
     {
@@ -103,6 +103,55 @@ public partial class PointCloudViewer : Control
             typeof(bool),
             typeof(PointCloudViewer),
             new PropertyMetadata(true, OnRenderPropertyChanged));
+
+    public static readonly DependencyProperty AllowDrawingRoiProperty =
+        DependencyProperty.Register(
+            nameof(AllowDrawingRoi),
+            typeof(bool),
+            typeof(PointCloudViewer),
+            new PropertyMetadata(true, OnRenderPropertyChanged));
+
+    public static readonly DependencyProperty MinXProperty =
+        DependencyProperty.Register(
+            nameof(MinX),
+            typeof(float),
+            typeof(PointCloudViewer),
+            new PropertyMetadata(float.MinValue, OnPointsChanged));
+
+    public static readonly DependencyProperty MaxXProperty =
+        DependencyProperty.Register(
+            nameof(MaxX),
+            typeof(float),
+            typeof(PointCloudViewer),
+            new PropertyMetadata(float.MaxValue, OnPointsChanged));
+
+    public static readonly DependencyProperty MinYProperty =
+        DependencyProperty.Register(
+            nameof(MinY),
+            typeof(float),
+            typeof(PointCloudViewer),
+            new PropertyMetadata(float.MinValue, OnPointsChanged));
+
+    public static readonly DependencyProperty MaxYProperty =
+        DependencyProperty.Register(
+            nameof(MaxY),
+            typeof(float),
+            typeof(PointCloudViewer),
+            new PropertyMetadata(float.MaxValue, OnPointsChanged));
+
+    public static readonly DependencyProperty MinZProperty =
+        DependencyProperty.Register(
+            nameof(MinZ),
+            typeof(float),
+            typeof(PointCloudViewer),
+            new PropertyMetadata(float.MinValue, OnPointsChanged));
+
+    public static readonly DependencyProperty MaxZProperty =
+        DependencyProperty.Register(
+            nameof(MaxZ),
+            typeof(float),
+            typeof(PointCloudViewer),
+            new PropertyMetadata(float.MaxValue, OnPointsChanged));
 
     /// <summary>
     /// 点云数据
@@ -185,6 +234,69 @@ public partial class PointCloudViewer : Control
         set => SetValue(ShowGridProperty, value);
     }
 
+    /// <summary>
+    /// 是否允许通过鼠标拖拽绘制 ROI 区域
+    /// </summary>
+    public bool AllowDrawingRoi
+    {
+        get => (bool)GetValue(AllowDrawingRoiProperty);
+        set => SetValue(AllowDrawingRoiProperty, value);
+    }
+
+    /// <summary>
+    /// 点云显示范围最小 X 坐标
+    /// </summary>
+    public float MinX
+    {
+        get => (float)GetValue(MinXProperty);
+        set => SetValue(MinXProperty, value);
+    }
+
+    /// <summary>
+    /// 点云显示范围最大 X 坐标
+    /// </summary>
+    public float MaxX
+    {
+        get => (float)GetValue(MaxXProperty);
+        set => SetValue(MaxXProperty, value);
+    }
+
+    /// <summary>
+    /// 点云显示范围最小 Y 坐标
+    /// </summary>
+    public float MinY
+    {
+        get => (float)GetValue(MinYProperty);
+        set => SetValue(MinYProperty, value);
+    }
+
+    /// <summary>
+    /// 点云显示范围最大 Y 坐标
+    /// </summary>
+    public float MaxY
+    {
+        get => (float)GetValue(MaxYProperty);
+        set => SetValue(MaxYProperty, value);
+    }
+
+    /// <summary>
+    /// 点云显示范围最小 Z 坐标
+    /// </summary>
+    public float MinZ
+    {
+        get => (float)GetValue(MinZProperty);
+        set => SetValue(MinZProperty, value);
+    }
+
+    /// <summary>
+    /// 点云显示范围最大 Z 坐标
+    /// </summary>
+    public float MaxZ
+    {
+        get => (float)GetValue(MaxZProperty);
+        set => SetValue(MaxZProperty, value);
+    }
+
     #endregion
 
     #region 事件
@@ -232,15 +344,12 @@ public partial class PointCloudViewer : Control
 
     // 着色器程序
     private uint _shaderProgram;
-    private uint _screenSpaceShaderProgram;
     private uint _overlayShaderProgram;
     private uint _overlayVao;
     private uint _overlayVbo;
     private uint _textShaderProgram;
     private uint _textVao;
     private uint _textVbo;
-    private uint _textTexture;
-    private int _textVertexCount;
     private uint _vao;
     private uint _vbo;
     private uint _roiVao;
@@ -284,6 +393,30 @@ public partial class PointCloudViewer : Control
 
     // 渲染定时器
     private DispatcherTimer? _renderTimer;
+
+    // 性能优化：网格缓存
+    private float _lastGridZoom = -1f;
+    private bool _gridNeedsUpdate = true;
+
+    // 性能优化：脏标记，控制是否需要重新渲染
+    private bool _needsRender = true;
+
+    // 性能优化：文本缓存
+    private uint _cachedTextTexture;
+    private string _cachedTextContent = string.Empty;
+    private int _cachedTextWidth;
+    private int _cachedTextHeight;
+
+    // 性能优化：LOD 相关
+    private int _currentLodLevel;  // 0=全量, 1=1/2, 2=1/4, 3=1/8...
+    private bool _useLod = true;  // 是否启用 LOD
+    private const int LodThreshold = 100000;  // 超过此点数启用 LOD
+    private const int MaxDisplayPoints = 2000000;  // 最大显示点数
+
+    // 资源管理
+    private bool _disposed;  // 标记是否已释放资源
+    private IntPtr _opengl32Handle;  // opengl32.dll 模块句柄，用于统一释放
+    private IntPtr _hwnd;  // 原生窗口句柄，用于释放 DC
 
     #endregion
 
@@ -385,6 +518,64 @@ void main()
     }
 
     /// <summary>
+    /// 释放控件使用的所有资源。
+    /// 实现 IDisposable 模式，确保 OpenGL 资源、Win32 句柄和事件处理器被正确清理。
+    /// </summary>
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// 释放托管和非托管资源。
+    /// </summary>
+    /// <param name="disposing">如果为 true，则释放托管资源；否则只释放非托管资源。</param>
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+            return;
+
+        if (disposing)
+        {
+            // 释放托管资源
+            _renderTimer?.Stop();
+            _renderTimer = null;
+
+            // 解绑事件处理器
+            Loaded -= OnLoaded;
+            Unloaded -= OnUnloaded;
+            MouseLeftButtonDown -= OnMouseLeftButtonDown;
+            MouseMove -= OnMouseMove;
+            MouseLeftButtonUp -= OnMouseLeftButtonUp;
+            MouseRightButtonDown -= OnMouseRightButtonDown;
+            MouseRightButtonUp -= OnMouseRightButtonUp;
+            MouseWheel -= OnMouseWheel;
+
+            // 清理 OpenGL 宿主
+            if (_glHost != null)
+            {
+                _glHostGrid?.Children.Remove(_glHost);
+                _glHost.Dispose();
+                _glHost = null;
+            }
+        }
+
+        // 释放非托管资源（OpenGL 上下文、Win32 句柄等）
+        CleanupOpenGL();
+
+        _disposed = true;
+    }
+
+    /// <summary>
+    /// 析构函数，确保非托管资源被释放。
+    /// </summary>
+    ~PointCloudViewer()
+    {
+        Dispose(false);
+    }
+
+    /// <summary>
     /// 应用控件模板后初始化
     /// </summary>
     public override void OnApplyTemplate()
@@ -402,6 +593,7 @@ void main()
         // 创建 OpenGL 宿主并添加到 Grid 中
         _glHost = new OpenGLHost(this);
         _glHostGrid.Children.Add(_glHost);
+        
 
         // 注册鼠标事件
         MouseLeftButtonDown += OnMouseLeftButtonDown;
@@ -432,6 +624,7 @@ void main()
     /// <exception cref="Exception">当设备上下文、像素格式或上下文创建失败时抛出。</exception>
     internal void InitializeOpenGL(IntPtr hwnd)
     {
+        _hwnd = hwnd;  // 保存窗口句柄，用于后续释放 DC
         _hDC = Win32Interop.GetDC(hwnd);
         if (_hDC == IntPtr.Zero)
             throw new Exception("Failed to get device context");
@@ -479,22 +672,46 @@ void main()
         if (addr != IntPtr.Zero)
             return addr;
 
-        var opengl32 = Win32Interop.LoadLibrary("opengl32.dll");
-        return Win32Interop.GetProcAddress(opengl32, name);
+        // 缓存 opengl32.dll 句柄，避免每次调用都 LoadLibrary 导致句柄泄漏
+        if (_opengl32Handle == IntPtr.Zero)
+        {
+            _opengl32Handle = Win32Interop.LoadLibrary("opengl32.dll");
+        }
+        return Win32Interop.GetProcAddress(_opengl32Handle, name);
     }
 
     /// <summary>
     /// 清理 OpenGL 资源，删除缓冲、程序、纹理等，并销毁上下文。
+    /// 此方法确保所有 GPU 资源和 Win32 资源被正确释放。
     /// </summary>
     internal void CleanupOpenGL()
     {
         if (_gl != null && _isInitialized)
         {
-            Win32Interop.wglMakeCurrent(_hDC, _hGLRC);
+            // 确保当前上下文可用
+            if (_hDC != IntPtr.Zero && _hGLRC != IntPtr.Zero)
+            {
+                Win32Interop.wglMakeCurrent(_hDC, _hGLRC);
+            }
 
-            _gl.DeleteVertexArray(_vao);
-            _gl.DeleteBuffer(_vbo);
-            _gl.DeleteProgram(_shaderProgram);
+            // 清理点云 VAO/VBO（添加检查）
+            if (_vao != 0)
+            {
+                _gl.DeleteVertexArray(_vao);
+                _vao = 0;
+            }
+            if (_vbo != 0)
+            {
+                _gl.DeleteBuffer(_vbo);
+                _vbo = 0;
+            }
+
+            // 清理主着色器程序（添加检查）
+            if (_shaderProgram != 0)
+            {
+                _gl.DeleteProgram(_shaderProgram);
+                _shaderProgram = 0;
+            }
 
             // 清理坐标系轴线的 VAO/VBO
             if (_axisVao != 0)
@@ -532,6 +749,18 @@ void main()
                 _roiVbo = 0;
             }
 
+            // 清理覆盖层 VAO/VBO（之前遗漏）
+            if (_overlayVao != 0)
+            {
+                _gl.DeleteVertexArray(_overlayVao);
+                _overlayVao = 0;
+            }
+            if (_overlayVbo != 0)
+            {
+                _gl.DeleteBuffer(_overlayVbo);
+                _overlayVbo = 0;
+            }
+
             // 清理文本 VAO/VBO
             if (_textVao != 0)
             {
@@ -555,13 +784,38 @@ void main()
                 _gl.DeleteProgram(_textShaderProgram);
                 _textShaderProgram = 0;
             }
+
+            // 清理缓存的文本纹理
+            if (_cachedTextTexture != 0)
+            {
+                _gl.DeleteTexture(_cachedTextTexture);
+                _cachedTextTexture = 0;
+                _cachedTextContent = string.Empty;
+            }
+
+            _gl = null;
         }
 
+        // 释放 OpenGL 上下文
         if (_hGLRC != IntPtr.Zero)
         {
             Win32Interop.wglMakeCurrent(IntPtr.Zero, IntPtr.Zero);
             Win32Interop.wglDeleteContext(_hGLRC);
             _hGLRC = IntPtr.Zero;
+        }
+
+        // 释放设备上下文（之前遗漏）
+        if (_hDC != IntPtr.Zero && _hwnd != IntPtr.Zero)
+        {
+            Win32Interop.ReleaseDC(_hwnd, _hDC);
+            _hDC = IntPtr.Zero;
+        }
+
+        // 释放 opengl32.dll 句柄
+        if (_opengl32Handle != IntPtr.Zero)
+        {
+            Win32Interop.FreeLibrary(_opengl32Handle);
+            _opengl32Handle = IntPtr.Zero;
         }
 
         _isInitialized = false;
@@ -924,33 +1178,67 @@ void main()
         Win32Interop.wglMakeCurrent(_hDC, _hGLRC);
 
         var points = Points;
-        _vertexCount = points.Count;
+        int totalPoints = points.Count;
+        
+        // 获取坐标范围限制
+        float minX = MinX;
+        float maxX = MaxX;
+        float minY = MinY;
+        float maxY = MaxY;
+        float minZ = MinZ;
+        float maxZ = MaxZ;
 
-        if (_vertexCount == 0) return;
+        // 性能优化：计算 LOD 级别
+        // 根据点数量决定抽稀比例
+        int stride = 1;
+        if (_useLod && totalPoints > LodThreshold)
+        {
+            // 计算需要的抽稀倍数，确保最终点数不超过 MaxDisplayPoints
+            stride = (totalPoints + MaxDisplayPoints - 1) / MaxDisplayPoints;
+            _currentLodLevel = (int)Math.Log2(stride);
+        }
+        else
+        {
+            _currentLodLevel = 0;
+        }
 
-        // 准备顶点数据: x, y, z, r, g, b, a
-        var vertices = new float[_vertexCount * 7];
-        for (int i = 0; i < _vertexCount; i++)
+        // 预计算目标数组大小以减少内存分配
+        int estimatedCount = (totalPoints + stride - 1) / stride;
+        var vertices = new float[estimatedCount * 7];
+        int vertexIndex = 0;
+
+        // 使用步长遍历点云实现抽稀
+        for (int i = 0; i < totalPoints; i += stride)
         {
             var point = points[i];
-            int offset = i * 7;
-            vertices[offset] = point.Position.X;
-            vertices[offset + 1] = point.Position.Y;
-            vertices[offset + 2] = point.Position.Z;
-            vertices[offset + 3] = point.Color.X;
-            vertices[offset + 4] = point.Color.Y;
-            vertices[offset + 5] = point.Color.Z;
-            vertices[offset + 6] = point.Color.W;
+            
+            // 检查点是否在范围内
+            if (point.Position.X >= minX && point.Position.X <= maxX &&
+                point.Position.Y >= minY && point.Position.Y <= maxY &&
+                point.Position.Z >= minZ && point.Position.Z <= maxZ)
+            {
+                vertices[vertexIndex++] = point.Position.X;
+                vertices[vertexIndex++] = point.Position.Y;
+                vertices[vertexIndex++] = point.Position.Z;
+                vertices[vertexIndex++] = point.Color.X;
+                vertices[vertexIndex++] = point.Color.Y;
+                vertices[vertexIndex++] = point.Color.Z;
+                vertices[vertexIndex++] = point.Color.W;
+            }
         }
+
+        _vertexCount = vertexIndex / 7;
+
+        if (_vertexCount == 0) return;
 
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
         fixed (float* data = vertices)
         {
-            _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(float)), data, BufferUsageARB.DynamicDraw);
+            _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertexIndex * sizeof(float)), data, BufferUsageARB.StaticDraw);
         }
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
 
-        Render();
+        _needsRender = true;
     }
 
     #endregion
@@ -1015,14 +1303,19 @@ void main()
             _gl.LineWidth(1.0f);
         }
 
-        // 绘制 XY 平面网格（动态调整大小以覆盖显示区域）
+        // 绘制 XY 平面网格（仅在需要时更新）
         if (ShowGrid)
         {
-            // 根据摄像机缩放和视角角度计算网格范围
-            float gridRange = _zoom * 0.5f;  // 网格范围随摄像机缩放调整
+            // 根据摄像机缩放计算网格范围
+            float gridRange = _zoom * 0.5f;
             
-            // 更新网格
-            UpdateXYGrid(gridRange);
+            // 性能优化：仅在 zoom 变化或标记需要更新时才重建网格 VBO
+            if (_gridNeedsUpdate || MathF.Abs(_lastGridZoom - _zoom) > 0.01f)
+            {
+                UpdateXYGrid(gridRange);
+                _lastGridZoom = _zoom;
+                _gridNeedsUpdate = false;
+            }
             
             if (_gridVertexCount > 0)
             {
@@ -1184,162 +1477,53 @@ void main()
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
         _gl.BindVertexArray(0);
 
-        // 绘制文本标签和数值（使用像素坐标，固定字体大小）
-        const float fontSize = 16;        // 固定字体大小（像素）
-        const float lineSpacing = 22;     // 行间距（像素）
-        const float marginRight = 10;     // 右边距（像素）
-        const float marginTop = 10;       // 上边距（像素）
-
-        // 计算起始位置 - 右上角
+        // 性能优化：将所有坐标文本合并为一个纹理，避免每帧创建多个纹理
+        const float fontSize = 16;
+        const float marginRight = 10;
+        const float marginTop = 10;
+        
         float startX = width - overlayWidthPx + marginRight;
         float startY = marginTop;
 
-        DrawText($"X: {xMm:F3} mm", startX, startY, fontSize, width, height);
-        DrawText($"Y: {yMm:F3} mm", startX, startY + lineSpacing, fontSize, width, height);
-        DrawText($"Z: {zMm:F3} mm", startX, startY + lineSpacing * 2, fontSize, width, height);
+        // 生成合并的文本内容
+        string combinedText = $"X: {xMm:F3} mm\nY: {yMm:F3} mm\nZ: {zMm:F3} mm";
+        DrawCachedText(combinedText, startX, startY, fontSize, width, height);
     }
 
     /// <summary>
-    /// 使用 FormattedText 生成文本的位图纹理
+    /// 绘制带缓存的文本（仅在内容变化时重新生成纹理）
     /// </summary>
-    /// <summary>
-    /// 使用 WPF FormattedText 生成文本纹理。
-    /// 
-    /// 流程：
-    /// 1. 使用指定字体和颜色通过 WPF FormattedText 渲染文本
-    /// 2. 绘制到 RenderTargetBitmap，分辨率 96 DPI
-    /// 3. 纹理大小填充为 2 的幂以满足 OpenGL 要求
-    /// 4. 将像素数据从 PBGRA 格式转换为 RGBA 格式
-    /// 5. 创建 OpenGL 纹理并上传像素数据
-    /// 
-    /// 文本颜色为石灰绿 (Lime Green)。
-    /// </summary>
-    /// <param name="text">要渲染的文本字符串。</param>
-    /// <param name="fontSize">字体大小，单位为点 (pt)。</param>
-    /// <returns>创建的 OpenGL 纹理 ID。调用者需负责删除纹理资源。</returns>
-    private unsafe uint CreateTextTexture(string text, int fontSize = 14)
-    {
-        // 使用 WPF 的 FormattedText 生成文本位图 - 文本颜色为绿色
-        var formattedText = new System.Windows.Media.FormattedText(
-            text,
-            System.Globalization.CultureInfo.GetCultureInfo("en-us"),
-            System.Windows.FlowDirection.LeftToRight,
-            new System.Windows.Media.Typeface("Arial"),
-            fontSize,
-            System.Windows.Media.Brushes.Lime,
-            VisualTreeHelper.GetDpi(this).PixelsPerDip);
-
-        int width = (int)formattedText.Width + 4;
-        int height = (int)formattedText.Height + 4;
-
-        // 确保宽高为2的幂
-        width = 1 << (int)Math.Ceiling(Math.Log2(width));
-        height = 1 << (int)Math.Ceiling(Math.Log2(height));
-
-        var drawingVisual = new DrawingVisual();
-        using (var drawingContext = drawingVisual.RenderOpen())
-        {
-            drawingContext.DrawText(formattedText, new System.Windows.Point(2, 2));
-        }
-
-        var bitmap = new RenderTargetBitmap(width, height, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
-        bitmap.Render(drawingVisual);
-
-        byte[] pixels = new byte[width * height * 4];
-        bitmap.CopyPixels(pixels, width * 4, 0);
-
-        // 转换为 RGBA 格式（从 PBGRA）
-        for (int i = 0; i < pixels.Length; i += 4)
-        {
-            // 交换 R 和 B (PBGRA -> RGBA)
-            (pixels[i], pixels[i + 2]) = (pixels[i + 2], pixels[i]);
-        }
-
-        uint texture = _gl!.GenTexture();
-        _gl.BindTexture(TextureTarget.Texture2D, texture);
-
-        fixed (byte* pixelPtr = pixels)
-        {
-            _gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba, (uint)width, (uint)height, 0,
-                PixelFormat.Rgba, PixelType.UnsignedByte, pixelPtr);
-        }
-
-        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
-        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
-        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-
-        _gl.BindTexture(TextureTarget.Texture2D, 0);
-
-        return texture;
-    }
-
-    /// <summary>
-    /// 绘制文本到指定位置（像素坐标系）
-    /// </summary>
-    /// <param name="text">要绘制的文本</param>
-    /// <param name="pixelX">屏幕 X 坐标（像素）</param>
-    /// <param name="pixelY">屏幕 Y 坐标（像素）</param>
-    /// <param name="fontSize">字体大小（像素）</param>
-    /// <param name="windowWidth">窗口宽度</param>
-    /// <param name="windowHeight">窗口高度</param>
-    /// <summary>
-    /// 在屏幕上绘制文本到指定像素坐标。
-    /// 
-    /// 功能流程：
-    /// 1. 生成文本纹理（大小向上对齐到 2 的幂）
-    /// 2. 构建屏幕空间矩形的四个顶点（左上角为起点）
-    /// 3. 使用正交投影矩阵将像素坐标转换为 NDC 坐标
-    /// 4. 启用 Alpha 混合实现透明效果
-    /// 5. 绘制纹理映射的四边形
-    /// 6. 清理临时纹理资源
-    /// 
-    /// 文本颜色为绿色 (0, 1, 0)。
-    /// </summary>
-    /// <param name="text">要绘制的文本。</param>
-    /// <param name="pixelX">屏幕 X 坐标（像素单位），向右为正。</param>
-    /// <param name="pixelY">屏幕 Y 坐标（像素单位），向下为正。</param>
-    /// <param name="fontSize">字体大小（像素单位）。</param>
-    /// <param name="windowWidth">窗口总宽度（像素）。</param>
-    /// <param name="windowHeight">窗口总高度（像素）。</param>
-    private unsafe void DrawText(string text, float pixelX, float pixelY, float fontSize, int windowWidth, int windowHeight)
+    private unsafe void DrawCachedText(string text, float pixelX, float pixelY, float fontSize, int windowWidth, int windowHeight)
     {
         if (_gl == null || _textShaderProgram == 0)
             return;
 
-        // 生成文本纹理
-        uint textTexture = CreateTextTexture(text, (int)fontSize);
+        // 检查是否需要更新纹理
+        if (_cachedTextTexture == 0 || _cachedTextContent != text)
+        {
+            // 删除旧纹理
+            if (_cachedTextTexture != 0)
+            {
+                _gl.DeleteTexture(_cachedTextTexture);
+            }
+            
+            // 创建新纹理
+            _cachedTextTexture = CreateMultiLineTextTexture(text, (int)fontSize, out _cachedTextWidth, out _cachedTextHeight);
+            _cachedTextContent = text;
+        }
 
-        // 获取纹理实际尺寸（2的幂对齐后）
-        // 使用 FormattedText 计算实际文本尺寸
-        var formattedText = new System.Windows.Media.FormattedText(
-            text,
-            System.Globalization.CultureInfo.GetCultureInfo("en-us"),
-            System.Windows.FlowDirection.LeftToRight,
-            new System.Windows.Media.Typeface("Arial"),
-            fontSize,
-            System.Windows.Media.Brushes.White,
-            VisualTreeHelper.GetDpi(this).PixelsPerDip);
-
-        // 计算纹理尺寸（2的幂对齐）
-        int texWidth = 1 << (int)Math.Ceiling(Math.Log2((int)formattedText.Width + 4));
-        int texHeight = 1 << (int)Math.Ceiling(Math.Log2((int)formattedText.Height + 4));
-
-        // 使用像素坐标构建矩形顶点
-        // 左上角为 (pixelX, pixelY)，向右下延伸
+        // 使用缓存的纹理尺寸
         float left = pixelX;
         float top = pixelY;
-        float right = pixelX + texWidth;
-        float bottom = pixelY + texHeight;
+        float right = pixelX + _cachedTextWidth;
+        float bottom = pixelY + _cachedTextHeight;
 
-        // 四个顶点: 左上、右上、左下、右下
-        // 纹理坐标：OpenGL 纹理原点在左下角，WPF 位图原点在左上角
         var vertices = new float[]
         {
-            left, top, 0, 1,           // 左上 (纹理坐标 0,1)
-            right, top, 1, 1,          // 右上 (纹理坐标 1,1)
-            left, bottom, 0, 0,        // 左下 (纹理坐标 0,0)
-            right, bottom, 1, 0        // 右下 (纹理坐标 1,0)
+            left, top, 0, 1,
+            right, top, 1, 1,
+            left, bottom, 0, 0,
+            right, bottom, 1, 0
         };
 
         if (_textVao == 0)
@@ -1356,47 +1540,91 @@ void main()
             _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(float)), data, BufferUsageARB.DynamicDraw);
         }
 
-        // 位置属性 (location 0): 2 floats
         _gl.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), (void*)0);
         _gl.EnableVertexAttribArray(0);
-
-        // 纹理坐标属性 (location 1): 2 floats
         _gl.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), (void*)(2 * sizeof(float)));
         _gl.EnableVertexAttribArray(1);
 
         _gl.UseProgram(_textShaderProgram);
 
-        // 创建正交投影矩阵 - 使用像素坐标系
-        // left=0, right=windowWidth, top=0, bottom=windowHeight (Y轴向下)
         var orthoProjection = Matrix4x4.CreateOrthographicOffCenter(0, windowWidth, windowHeight, 0, -1, 1);
         SetUniformMatrix4(_gl, _textShaderProgram, "uProjection", orthoProjection);
 
-        // 设置 uniform - 文本颜色为绿色
         int colorLoc = _gl.GetUniformLocation(_textShaderProgram, "uColor");
-        _gl.Uniform4(colorLoc, 0.0f, 1.0f, 0.0f, 1.0f);  // 绿色 (0, 1, 0, 1)
+        _gl.Uniform4(colorLoc, 0.0f, 1.0f, 0.0f, 1.0f);
 
         int texLoc = _gl.GetUniformLocation(_textShaderProgram, "uTexture");
         _gl.Uniform1(texLoc, 0);
 
-        // 绑定纹理
         _gl.ActiveTexture(TextureUnit.Texture0);
-        _gl.BindTexture(TextureTarget.Texture2D, textTexture);
+        _gl.BindTexture(TextureTarget.Texture2D, _cachedTextTexture);
 
-        // 启用混合
         _gl.Enable(EnableCap.Blend);
         _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
         _gl.Disable(EnableCap.DepthTest);
 
-        // 绘制矩形（三角形条带）
         _gl.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
 
         _gl.Enable(EnableCap.DepthTest);
         _gl.Disable(EnableCap.Blend);
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
         _gl.BindVertexArray(0);
+    }
 
-        // 删除临时纹理
-        _gl.DeleteTexture(textTexture);
+    /// <summary>
+    /// 创建多行文本纹理
+    /// </summary>
+    private unsafe uint CreateMultiLineTextTexture(string text, int fontSize, out int texWidth, out int texHeight)
+    {
+        var formattedText = new System.Windows.Media.FormattedText(
+            text,
+            System.Globalization.CultureInfo.GetCultureInfo("en-us"),
+            System.Windows.FlowDirection.LeftToRight,
+            new System.Windows.Media.Typeface("Arial"),
+            fontSize,
+            System.Windows.Media.Brushes.Lime,
+            VisualTreeHelper.GetDpi(this).PixelsPerDip);
+
+        int width = (int)formattedText.Width + 4;
+        int height = (int)formattedText.Height + 4;
+
+        texWidth = 1 << (int)Math.Ceiling(Math.Log2(width));
+        texHeight = 1 << (int)Math.Ceiling(Math.Log2(height));
+
+        var drawingVisual = new DrawingVisual();
+        using (var drawingContext = drawingVisual.RenderOpen())
+        {
+            drawingContext.DrawText(formattedText, new System.Windows.Point(2, 2));
+        }
+
+        var bitmap = new RenderTargetBitmap(texWidth, texHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+        bitmap.Render(drawingVisual);
+
+        byte[] pixels = new byte[texWidth * texHeight * 4];
+        bitmap.CopyPixels(pixels, texWidth * 4, 0);
+
+        for (int i = 0; i < pixels.Length; i += 4)
+        {
+            (pixels[i], pixels[i + 2]) = (pixels[i + 2], pixels[i]);
+        }
+
+        uint texture = _gl!.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, texture);
+
+        fixed (byte* pixelPtr = pixels)
+        {
+            _gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba, (uint)texWidth, (uint)texHeight, 0,
+                PixelFormat.Rgba, PixelType.UnsignedByte, pixelPtr);
+        }
+
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+
+        _gl.BindTexture(TextureTarget.Texture2D, 0);
+
+        return texture;
     }
 
     private Matrix4x4 CreateOrthoMatrix(float left, float right, float bottom, float top, float near, float far)
@@ -1599,6 +1827,11 @@ void main()
 
     private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (!AllowDrawingRoi)
+        {
+            return;
+        }
+
         _isDrawingRoi = true;
         _roiStart = e.GetPosition(this);
         _roiEnd = _roiStart;
@@ -1616,13 +1849,14 @@ void main()
         if (width > 0 && height > 0)
         {
             _currentMouseWorldPosition = ScreenToWorld(currentPos, width, height);
-            UpdateMousePositionDisplay();
+            // 性能优化：仅标记需要渲染，不直接调用 Render
+            _needsRender = true;
         }
 
         if (_isDrawingRoi)
         {
             _roiEnd = currentPos;
-            Render();
+            _needsRender = true;
         }
         else if (_isRotating)
         {
@@ -1634,7 +1868,7 @@ void main()
             UpdateCameraPositionWithRotation();
             
             _lastMousePosition = currentPos;
-            Render();
+            _needsRender = true;
         }
     }
 
@@ -1656,15 +1890,6 @@ void main()
         var rotatedDirection = Vector3.Transform(new Vector3(0, 0, distance), rotationMatrix);
         
         _cameraPosition = _cameraTarget + rotatedDirection;
-    }
-
-    /// <summary>
-    /// 更新鼠标位置显示（现在仅用于触发 OpenGL 覆盖层渲染）
-    /// </summary>
-    private void UpdateMousePositionDisplay()
-    {
-        // 不再更新 WPF 文本，Render() 中会读取 _currentMouseWorldPosition 并在 OpenGL 覆盖层绘制
-        Render();
     }
 
     private void OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -1714,7 +1939,7 @@ void main()
             args.Source = this;
             RaiseEvent(args);
 
-            Render();
+            _needsRender = true;
         }
     }
 
@@ -1753,7 +1978,7 @@ void main()
             _cameraPosition = _cameraTarget + new Vector3(0, 0, _zoom);
         }
         
-        Render();
+        _needsRender = true;
     }
 
     private Rect GetRoiRect()
@@ -1837,14 +2062,35 @@ void main()
         {
             Interval = TimeSpan.FromMilliseconds(16) // ~60 FPS
         };
-        _renderTimer.Tick += (s, args) => Render();
+        _renderTimer.Tick += OnRenderTimerTick;
         _renderTimer.Start();
+    }
+
+    /// <summary>
+    /// 渲染定时器回调，使用脏标记控制是否需要实际渲染
+    /// </summary>
+    private void OnRenderTimerTick(object? sender, EventArgs e)
+    {
+        if (_needsRender)
+        {
+            _needsRender = false;
+            Render();
+        }
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        // 停止渲染定时器
         _renderTimer?.Stop();
         _renderTimer = null;
+
+        // 解绑事件处理器，防止内存泄漏
+        MouseLeftButtonDown -= OnMouseLeftButtonDown;
+        MouseMove -= OnMouseMove;
+        MouseLeftButtonUp -= OnMouseLeftButtonUp;
+        MouseRightButtonDown -= OnMouseRightButtonDown;
+        MouseRightButtonUp -= OnMouseRightButtonUp;
+        MouseWheel -= OnMouseWheel;
     }
 
     private static void OnPointsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -1863,7 +2109,10 @@ void main()
             if (viewer._isInitialized)
             {
                 viewer.CreateCoordinateAxis();
+                viewer._gridNeedsUpdate = true;
             }
+            
+            viewer._needsRender = true;
         }
     }
 
@@ -1875,7 +2124,7 @@ void main()
             {
                 viewer.UpdateRoiRectangleStyle();
             }
-            viewer.Render();
+            viewer._needsRender = true;
         }
     }
 
@@ -1903,18 +2152,40 @@ void main()
             return Vector3.Zero;
         }
 
+        // 获取坐标范围限制
+        float rangeMinX = MinX;
+        float rangeMaxX = MaxX;
+        float rangeMinY = MinY;
+        float rangeMaxY = MaxY;
+        float rangeMinZ = MinZ;
+        float rangeMaxZ = MaxZ;
+
         float minX = float.MaxValue, maxX = float.MinValue;
         float minY = float.MaxValue, maxY = float.MinValue;
         float minZ = float.MaxValue, maxZ = float.MinValue;
 
         foreach (var point in Points)
         {
+            // 检查点是否在范围内
+            if (point.Position.X < rangeMinX || point.Position.X > rangeMaxX ||
+                point.Position.Y < rangeMinY || point.Position.Y > rangeMaxY ||
+                point.Position.Z < rangeMinZ || point.Position.Z > rangeMaxZ)
+            {
+                continue;
+            }
+
             minX = Math.Min(minX, point.Position.X);
             maxX = Math.Max(maxX, point.Position.X);
             minY = Math.Min(minY, point.Position.Y);
             maxY = Math.Max(maxY, point.Position.Y);
             minZ = Math.Min(minZ, point.Position.Z);
             maxZ = Math.Max(maxZ, point.Position.Z);
+        }
+
+        // 如果没有点在范围内，返回零向量
+        if (minX == float.MaxValue)
+        {
+            return Vector3.Zero;
         }
 
         var center = new Vector3(
@@ -2019,7 +2290,7 @@ void main()
         _zoom = 5;
         _cameraTarget = Vector3.Zero;
         _cameraPosition = new Vector3(0, 0, _zoom);
-        Render();
+        _needsRender = true;
     }
 
     /// <summary>
@@ -2061,7 +2332,7 @@ void main()
         _rotationX = 0;
         _rotationY = 0;
 
-        Render();
+        _needsRender = true;
     }
 
     #endregion

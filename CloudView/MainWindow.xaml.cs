@@ -73,5 +73,63 @@ namespace CloudView
                 }
             }
         }
+
+        private void TestRangeFilter_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = DataContext as MainViewModel;
+            if (vm != null)
+            {
+                // 执行命令生成点云
+                vm.TestRangeFilterCommand.Execute(null);
+                
+                // 设置坐标范围限制：仅显示上半部分
+                // 点云范围: X[10,20], Y[5,15], Z[-5,5]
+                // 限制范围: X[10,20], Y[10,15], Z[-5,5]
+                PointCloudViewer.MinX = 10;
+                PointCloudViewer.MaxX = 20;
+                PointCloudViewer.MinY = 10;
+                PointCloudViewer.MaxY = 15;
+                PointCloudViewer.MinZ = -5;
+                PointCloudViewer.MaxZ = 5;
+            }
+        }
+
+        private void TestRangeFilter2_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = DataContext as MainViewModel;
+            if (vm != null)
+            {
+                // 执行命令生成点云
+                vm.TestRangeFilter2Command.Execute(null);
+                
+                // 设置坐标范围限制：仅显示中心立方体部分
+                // 点云范围: X[10,20], Y[5,15], Z[-5,5]
+                // 限制范围: X[12,18], Y[7,13], Z[-3,3]
+                PointCloudViewer.MinX = 12;
+                PointCloudViewer.MaxX = 18;
+                PointCloudViewer.MinY = 7;
+                PointCloudViewer.MaxY = 13;
+                PointCloudViewer.MinZ = -3;
+                PointCloudViewer.MaxZ = 3;
+            }
+        }
+
+        private void ResetRangeFilter_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = DataContext as MainViewModel;
+            if (vm != null)
+            {
+                // 执行命令显示状态
+                vm.ResetRangeFilterCommand.Execute(null);
+                
+                // 重置坐标范围限制到无限制
+                PointCloudViewer.MinX = float.MinValue;
+                PointCloudViewer.MaxX = float.MaxValue;
+                PointCloudViewer.MinY = float.MinValue;
+                PointCloudViewer.MaxY = float.MaxValue;
+                PointCloudViewer.MinZ = float.MinValue;
+                PointCloudViewer.MaxZ = float.MaxValue;
+            }
+        }
     }
 }

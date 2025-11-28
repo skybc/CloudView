@@ -78,6 +78,25 @@
                     <Button x:Name="TestRotationButton" Content="旋转中心测试说明" 
                             Click="TestRotationCenter_Click" Margin="0,0,0,15" Padding="8,5" Background="#7D3C3C"/>
                     
+                    <!-- 性能测试 -->
+                    <TextBlock Text="性能测试（大规模点云）" Foreground="#CCCCCC" Margin="0,0,0,5"/>
+                    <Button Content="加载 5000 万点" Command="{Binding GenerateLargePointCloudForPerformanceTestCommand}" 
+                            Margin="0,0,0,5" Padding="8,5" Background="#7D4C00" FontWeight="Bold"/>
+                    <TextBlock Foreground="#FFAA00" TextWrapping="Wrap" Margin="0,0,0,15" FontSize="10">
+                        <Run Text="⚠️ 警告: 点击后将耗时 30-60 秒生成 5000 万点数据。"/>
+                        <LineBreak/>
+                        <Run Text="生成完成后，点云将自动抽稀到最大 200 万点显示。"/>
+                    </TextBlock>
+                    
+                    <!-- 坐标范围限制测试 -->
+                    <TextBlock Text="坐标范围限制" Foreground="#CCCCCC" Margin="0,0,0,5"/>
+                    <Button Content="测试范围限制 1" Click="TestRangeFilter_Click" 
+                            Margin="0,0,0,5" Padding="8,5" Background="#3C7D7D"/>
+                    <Button Content="测试范围限制 2" Click="TestRangeFilter2_Click" 
+                            Margin="0,0,0,5" Padding="8,5" Background="#3C7D7D"/>
+                    <Button Content="重置范围限制" Click="ResetRangeFilter_Click" 
+                            Margin="0,0,0,15" Padding="8,5" Background="#4D4D00"/>
+                    
                     <!-- 选择信息 -->
                     <TextBlock Text="选择信息" Foreground="#CCCCCC" Margin="0,0,0,5"/>
                     <Border Background="#3C3C3C" Padding="10" CornerRadius="4">

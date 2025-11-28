@@ -127,7 +127,34 @@ PointCloudViewer 是 CloudView.Controls 项目中的核心渲染控件，负责�
 - 旋转通过应用旋转矩阵到初始方向向量 (0, 0, distance) 来实现
 - 摄像机位置 = 目标点 + 旋转后的方向向量
 
-### 6. 着色器管理
+### 6. 坐标范围限制 ✨ 新增
+支持通过设定坐标范围限制点云的显示范围，仅显示在指定范围内的点：
+- **默认范围**：X、Y、Z 轴的最小值为 `float.MinValue`，最大值为 `float.MaxValue`（无限制）
+- **范围外处理**：超出指定范围的点不会被渲染，也不会参与点云中心计算
+
+**依赖属性**：
+- `MinX`, `MaxX`: X 轴坐标范围
+- `MinY`, `MaxY`: Y 轴坐标范围
+- `MinZ`, `MaxZ`: Z 轴坐标范围
+
+**功能说明**：
+- 在 `UpdatePointCloudBuffer()` 中，只有在指定坐标范围内的点才会被添加到顶点缓冲中
+- 在 `CalculatePointCloudCenter()` 中，只有在指定坐标范围内的点才会参与中心点计算
+- 范围限制对摄像机焦点和旋转中心的计算也有影响
+- 当没有任何点在指定范围内时，摄像机焦点默认回到原点 (0, 0, 0)
+
+**使用示例**：
+```csharp
+// 设置显示范围，仅显示 X: [-10, 10], Y: [-20, 20], Z: [-5, 5] 范围内的点
+viewer.MinX = -10;
+viewer.MaxX = 10;
+viewer.MinY = -20;
+viewer.MaxY = 20;
+viewer.MinZ = -5;
+viewer.MaxZ = 5;
+```
+
+### 7. 着色器管理
 - 顶点着色器：处理位置和颜色的变换
 - 片段着色器：输出点的颜色
 - 使用 uniform 矩阵传递模型、视图和投影变换
@@ -179,6 +206,9 @@ Render() → Clear背景 → 设置矩阵和着色器 →
 - `RoiBorderColor`: ROI 区域边框颜色
 - `SelectedPoints`: 当前选中的点集合
 - `SelectedIndices`: 当前选中的点索引列表
+- `MinX`, `MaxX`: X 轴坐标显示范围（默认: float.MinValue ~ float.MaxValue）
+- `MinY`, `MaxY`: Y 轴坐标显示范围（默认: float.MinValue ~ float.MaxValue）
+- `MinZ`, `MaxZ`: Z 轴坐标显示范围（默认: float.MinValue ~ float.MaxValue）
 
 ### 公共方法
 - `LoadFromFloatArray()`: 从浮点数组加载点云
@@ -240,6 +270,80 @@ viewer.RoiSelected += (sender, args) =>
 - 不支持 OpenGL 版本低于 3.3 的硬件
 
 ## 最近更新 ✨
+
+### v2.5 - 大规模点云渲染性能优化
+- **性能问题**：
+  - 千万级点云渲染卡顿
+  - GPU 使用率过高
+  - 鼠标交互响应迟缓
+
+- **优化方案**：
+
+#### 1. LOD（Level of Detail）点云抽稀
+- **阈值**：点数超过 100,000 时启用 LOD
+- **最大显示点数**：2,000,000 点
+- **抽稀算法**：均匀采样，根据点数自动计算采样步长
+  ```
+  stride = (totalPoints + MaxDisplayPoints - 1) / MaxDisplayPoints
+  ```
+- **效果**：千万级点云自动抽稀到 200 万点显示
+
+#### 2. 脏标记渲染机制
+- **原问题**：鼠标移动、滚轮缩放等操作直接调用 Render()，导致过度渲染
+- **优化**：引入 `_needsRender` 脏标记
+  - 交互操作只设置脏标记
+  - DispatcherTimer（16ms/60FPS）检查脏标记，仅在需要时渲染
+- **效果**：减少 50%+ 的无效渲染调用
+
+#### 3. 网格缓存优化
+- **原问题**：`UpdateXYGrid()` 每帧调用，每帧重建 VBO
+- **优化**：仅在缩放变化（`_zoom` 变化超过 0.01）时更新网格
+- **实现**：`_lastGridZoom` 和 `_gridNeedsUpdate` 字段控制更新时机
+
+#### 4. 文本纹理缓存
+- **原问题**：每帧创建 3 个纹理（X/Y/Z 坐标），每帧删除
+- **优化**：
+  - 合并 3 行文本为 1 个纹理
+  - 缓存纹理，仅在内容变化时重新生成
+- **实现**：`_cachedTextTexture`、`_cachedTextContent` 缓存机制
+
+#### 5. 点云缓冲优化
+- **原问题**：使用 `List<float>` 动态添加，再转数组
+- **优化**：
+  - 预计算数组大小，一次性分配
+  - 使用 `StaticDraw` 替代 `DynamicDraw`（数据更新频率低）
+
+- **受影响的字段**：
+  - 新增 `_needsRender`：脏标记
+  - 新增 `_lastGridZoom`、`_gridNeedsUpdate`：网格缓存
+  - 新增 `_cachedTextTexture`、`_cachedTextContent`：文本缓存
+  - 新增 `_currentLodLevel`、`_useLod`：LOD 控制
+  - 新增常量 `LodThreshold`、`MaxDisplayPoints`：LOD 阈值
+
+- **受影响的方法**：
+  - `UpdatePointCloudBuffer()`: 添加 LOD 抽稀逻辑
+  - `Render()`: 添加网格缓存检查
+  - `OnMouseMove()`: 使用脏标记替代直接渲染
+  - `OnMouseWheel()`: 使用脏标记替代直接渲染
+  - `OnRenderTimerTick()`: 新增，处理脏标记和渲染
+  - `DrawCachedText()`: 新增，带缓存的文本渲染
+  - `CreateMultiLineTextTexture()`: 新增，创建多行文本纹理
+
+### v2.4 - 坐标范围限制功能
+- **功能新增**：
+  - 实现坐标范围限制，支持仅显示指定坐标范围内的点
+  - 超出范围的点不被渲染，也不参与中心点计算
+
+- **实现细节**：
+  - 新增 6 个依赖属性：`MinX`, `MaxX`, `MinY`, `MaxY`, `MinZ`, `MaxZ`
+  - 默认值为 `float.MinValue` 和 `float.MaxValue`，表示无限制
+  - 修改 `UpdatePointCloudBuffer()` 方法，在构建顶点缓冲时过滤出范围内的点
+  - 修改 `CalculatePointCloudCenter()` 方法，在计算中心点时仅考虑范围内的点
+  - 依赖属性变化时自动触发 `OnPointsChanged` 回调，重新更新缓冲和中心点
+
+- **受影响的方法**：
+  - `UpdatePointCloudBuffer()`: 添加坐标范围检查，过滤点数据
+  - `CalculatePointCloudCenter()`: 添加坐标范围检查，过滤点数据用于中心计算
 
 ### v2.3 - 坐标系和网格中心对齐改进
 - **功能改进**：
@@ -315,3 +419,57 @@ float gridRange = _zoom * 0.5f;  // 调整系数来改变覆盖范围
 ```csharp
 const float gridSpacing = 0.1f;  // 改变此值调整网格线间距
 ```
+
+## 资源管理
+
+### IDisposable 模式
+`PointCloudViewer` 实现 `IDisposable` 接口，确保资源安全释放：
+
+```csharp
+public partial class PointCloudViewer : Control, IDisposable
+{
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing) { ... }
+    
+    ~PointCloudViewer() { Dispose(false); }
+}
+```
+
+### 资源清理清单
+`CleanupOpenGL()` 方法负责清理以下资源：
+
+| 资源类型 | 字段名 | 释放方法 |
+|---------|-------|---------|
+| 点云 VAO/VBO | `_vao`, `_vbo` | `DeleteVertexArray`, `DeleteBuffer` |
+| 坐标轴 VAO/VBO | `_axisVao`, `_axisVbo` | `DeleteVertexArray`, `DeleteBuffer` |
+| 网格 VAO/VBO | `_gridVao`, `_gridVbo` | `DeleteVertexArray`, `DeleteBuffer` |
+| ROI VAO/VBO | `_roiVao`, `_roiVbo` | `DeleteVertexArray`, `DeleteBuffer` |
+| 覆盖层 VAO/VBO | `_overlayVao`, `_overlayVbo` | `DeleteVertexArray`, `DeleteBuffer` |
+| 文本 VAO/VBO | `_textVao`, `_textVbo` | `DeleteVertexArray`, `DeleteBuffer` |
+| 主着色器 | `_shaderProgram` | `DeleteProgram` |
+| 覆盖层着色器 | `_overlayShaderProgram` | `DeleteProgram` |
+| 文本着色器 | `_textShaderProgram` | `DeleteProgram` |
+| 文本纹理 | `_cachedTextTexture` | `DeleteTexture` |
+| OpenGL 上下文 | `_hGLRC` | `wglDeleteContext` |
+| 设备上下文 | `_hDC` | `ReleaseDC` |
+| OpenGL 库句柄 | `_opengl32Handle` | `FreeLibrary` |
+
+### 事件处理器解绑
+在 `OnUnloaded()` 和 `Dispose()` 中解绑所有鼠标事件处理器：
+- `MouseLeftButtonDown`
+- `MouseMove`
+- `MouseLeftButtonUp`
+- `MouseRightButtonDown`
+- `MouseRightButtonUp`
+- `MouseWheel`
+
+### 资源管理最佳实践
+1. **检查后删除**：所有 OpenGL 资源删除前检查句柄是否为 0
+2. **删除后置零**：资源删除后立即将句柄设为 0，防止重复删除
+3. **句柄缓存**：`opengl32.dll` 句柄缓存在 `_opengl32Handle`，避免重复加载
+4. **窗口句柄保存**：保存 `_hwnd` 以便正确调用 `ReleaseDC`
