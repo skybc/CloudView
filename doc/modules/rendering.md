@@ -68,6 +68,24 @@ PointCloudViewer 是 CloudView.Controls 项目中的核心渲染控件，负责�
 - 支持动态更新点云数据
 - 可配置的点大小
 
+### 1.1 对象渲染（BaseSharp） ✨ 新增
+- 依赖属性 `Shapes`：`IList<BaseSharp>`，默认 null
+- `BaseSharp` 公共属性：`Id`、`Name`
+- 已内置类型：
+  - `PanelSharp`（面片）：使用顶点顺序绘制 TriangleFan，支持填充和轮廓渲染
+  - `LineSharp`（线条）：连接顶点的折线，支持闭合，可配置线宽
+  - `VolumeSharp`（体积）：三角形索引定义的多面体，支持填充和轮廓
+- 渲染管线：`Shapes` 更新 → 构建对应 VAO/VBO → 在主着色器下绘制（位置+颜色布局复用点云管线）
+- 构建器模式：每个派生类型需提供 `ISharpRenderBuilder`，已注册 `PanelSharpBuilder`、`LineSharpBuilder`、`VolumeSharpBuilder`，后续类型可通过注册新 builder 扩展
+- 渲染选项：
+  - `PanelSharp.DrawFill`：是否绘制填充面（默认 true）
+  - `PanelSharp.DrawOutline`：是否绘制边框轮廓（默认 false）
+  - `PanelSharp.LineWidth`：轮廓线宽度
+  - `LineSharp.LineWidth`：线条宽度（默认 2.0）
+  - `LineSharp.IsClosed`：是否闭合线条
+  - `VolumeSharp.DrawFill`、`VolumeSharp.DrawOutline`、`VolumeSharp.LineWidth`：同面片
+  - `VolumeSharp.Indices`：三角形索引列表，每三个索引定义一个三角形
+
 ### 2. 坐标系显示 ✨ 新增
 显示三维空间中点云中心处的坐标系轴线：
 - **X 轴**：红色，长度 1.0，从点云中心出发

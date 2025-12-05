@@ -515,6 +515,7 @@ void main()
 
     public PointCloudViewer()
     {
+        InitializeSharpSupport();
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
     }
@@ -668,6 +669,11 @@ void main()
         {
             UpdatePointCloudBuffer(); 
         }
+
+        if ((_sharpNeedsRebuild && Shapes != null) || (Shapes != null && Shapes.Count > 0))
+        {
+            UpdateShapesBuffers();
+        }
     }
 
     private nint GetProcAddressFunc(string name)
@@ -796,6 +802,8 @@ void main()
                 _cachedTextTexture = 0;
                 _cachedTextContent = string.Empty;
             }
+
+            CleanupSharpBuffers();
 
             _gl = null;
         }
@@ -1332,6 +1340,9 @@ void main()
                 _gl.Disable(EnableCap.Blend);
             }
         }
+
+        // 绘制几何对象（BaseSharp 派生类型）
+        RenderShapes();
 
         // 绘制点云
         if (_vertexCount > 0)
