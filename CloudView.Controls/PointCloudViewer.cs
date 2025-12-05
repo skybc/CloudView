@@ -600,14 +600,7 @@ void main()
         
 
         // 注册鼠标事件
-        MouseLeftButtonDown += OnMouseLeftButtonDown;
-        MouseMove += OnMouseMove;
-        MouseLeftButtonUp += OnMouseLeftButtonUp;
-        MouseRightButtonDown += OnMouseRightButtonDown;
-        MouseRightButtonUp += OnMouseRightButtonUp;
-        PreviewMouseDown += OnPreviewMouseDown;
-        PreviewMouseUp += OnPreviewMouseUp;
-        MouseWheel += OnMouseWheel;
+      
     }
 
     private void UpdateRoiRectangleStyle()
@@ -2138,6 +2131,14 @@ void main()
         };
         _renderTimer.Tick += OnRenderTimerTick;
         _renderTimer.Start();
+        MouseLeftButtonDown += OnMouseLeftButtonDown;
+        MouseMove += OnMouseMove;
+        MouseLeftButtonUp += OnMouseLeftButtonUp;
+        MouseRightButtonDown += OnMouseRightButtonDown;
+        MouseRightButtonUp += OnMouseRightButtonUp;
+        PreviewMouseDown += OnPreviewMouseDown;
+        PreviewMouseUp += OnPreviewMouseUp;
+        MouseWheel += OnMouseWheel;
     }
 
     /// <summary>
