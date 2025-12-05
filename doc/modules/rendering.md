@@ -111,6 +111,7 @@ PointCloudViewer 是 CloudView.Controls 项目中的核心渲染控件，负责�
 ### 5. 摄像机系统
 - 支持 3D 旋转（右鼠标拖动），围绕视野中心旋转
 - 支持缩放（鼠标滚轮）
+- 支持平移（中鼠标拖动），左右上下移动视野 ✨ 新增
 - 视图/投影矩阵自动管理
 - 支持自动调整视图以适应所有点 (FitToView)
 - **自动视野中心定位**：Points 更新后，自动计算点云中心并将视野中心设置到该位置
@@ -120,6 +121,22 @@ PointCloudViewer 是 CloudView.Controls 项目中的核心渲染控件，负责�
 - 将 `_cameraTarget` 设置为计算出的点云中心
 - 摄像机旋转围绕 `_cameraTarget` 进行，实现以点云中心为旋转轴的交互体验
 - 重置摄像机旋转角度为 0，使摄像机沿 Z 轴方向观看
+
+**摄像机平移系统** ✨ 新增
+- 中键拖动实现视野平移，左右上下移动
+- 平移速度与当前缩放（摄像机到目标点的距离）成正比，提供自然的交互体验
+- 平移后，摄像机目标点（缩放中心）也会随之移动
+- 平移过程中保持摄像机到目标点的距离不变，确保视野不会出现意外变化
+
+**平移实现细节**：
+- `_isPanning`: 标志中键是否被按下
+- `_panOffset`: 记录累积的平移偏移量（用于重置视图等操作的参考）
+- 平移公式：根据鼠标移动距离、缩放距离和摄像机坐标系计算平移向量
+- 摄像机坐标系使用三个基向量计算：
+  - `forward`: 摄像机看向方向
+  - `right`: 摄像机右向量（用于左右平移）
+  - `up`: 摄像机向上向量（用于上下平移）
+- 平移速度系数：`panSpeed = _zoom * 0.01f`，可在 `OnMouseMove()` 中调整
 
 **实现细节**：
 - `CalculatePointCloudCenter()` 方法：遍历所有点，计算 AABB 的中心点
@@ -192,6 +209,16 @@ Render() → Clear背景 → 设置矩阵和着色器 →
   OnMouseMove() → 更新 _rotationX/_rotationY → UpdateCameraPositionWithRotation() → Render()
     ↓
   OnMouseRightButtonUp() → _isRotating=false
+
+鼠标中键拖动平移：
+  OnPreviewMouseDown(MiddleButton) → OnMouseMiddleButtonDown() → _isPanning=true
+    ↓
+  OnMouseMove() → 计算平移向量 → 更新 _cameraTarget/_cameraPosition/panOffset → Render()
+    ↓
+  OnPreviewMouseUp(MiddleButton) → OnMouseMiddleButtonUp() → _isPanning=false
+
+鼠标滚轮缩放：
+  OnMouseWheel() → 更新 _zoom → 保持摄像机方向，仅改变距离 → Render()
 ```
 
 ## 公共 API
@@ -270,6 +297,42 @@ viewer.RoiSelected += (sender, args) =>
 - 不支持 OpenGL 版本低于 3.3 的硬件
 
 ## 最近更新 ✨
+
+### v2.6 - 摄像机平移功能
+- **功能新增**：
+  - 实现中键拖动进行视野平移
+  - 支持左右、上下任意方向平移
+  - 平移后，缩放中心点（摄像机目标点）也相应移动
+
+- **实现细节**：
+  - 新增 `_isPanning` 标志：表示中键是否被按下
+  - 新增 `_panOffset` 字段：记录累积的平移偏移量
+  - 新增 `OnMouseMiddleButtonDown()` 和 `OnMouseMiddleButtonUp()` 方法：处理中键按下和释放
+  - 新增 `OnPreviewMouseDown()` 和 `OnPreviewMouseUp()` 方法：在预览阶段捕获中键事件
+  - 修改 `OnMouseMove()` 方法：添加平移处理逻辑
+  - 修改 `OnApplyTemplate()` 方法：注册预览鼠标事件处理器
+  - 修改 `Dispose()` 和 `OnUnloaded()` 方法：注销预览鼠标事件处理器
+
+- **平移算法**：
+  1. 获取摄像机的三个基向量（forward、right、up）
+  2. 计算平移速度系数：`panSpeed = _zoom * 0.01f`
+  3. 根据鼠标移动距离计算平移向量：`panDelta = right * deltaX * panSpeed + up * deltaY * panSpeed`
+  4. 更新摄像机目标点：`_cameraTarget += panDelta`
+  5. 保持摄像机到目标点的距离：重新计算摄像机位置以维持相同距离
+
+- **交互流程**：
+  ```
+  OnPreviewMouseDown(MiddleButton) → OnMouseMiddleButtonDown → _isPanning=true
+    ↓
+  OnMouseMove → 计算平移向量 → 更新 _cameraTarget 和 _cameraPosition → Render()
+    ↓
+  OnPreviewMouseUp(MiddleButton) → OnMouseMiddleButtonUp → _isPanning=false
+  ```
+
+- **效果**：
+  - 用户按住中键，拖动鼠标可以在屏幕空间中任意平移视野
+  - 平移不会改变视角旋转状态，只改变视野中心
+  - 平移不会改变缩放距离，保持一致的视野大小
 
 ### v2.5 - 大规模点云渲染性能优化
 - **性能问题**：

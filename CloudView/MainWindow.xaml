@@ -20,8 +20,8 @@
         
         <!-- 点云显示区域 -->
         <controls:PointCloudViewer x:Name="PointCloudViewer"
-                                   Grid.Column="0"
-                                   Points="{Binding Points}"
+                                   Grid.Column="0" 
+                                   Points="{Binding Points}" Visibility="Collapsed"
                                    PointSize="{Binding PointSize}"
                                    BackgroundColor="#1E1E1E"
                                    RoiColor="#500078D7"
@@ -77,6 +77,11 @@
                     <TextBlock Text="旋转测试" Foreground="#CCCCCC" Margin="0,0,0,5"/>
                     <Button x:Name="TestRotationButton" Content="旋转中心测试说明" 
                             Click="TestRotationCenter_Click" Margin="0,0,0,15" Padding="8,5" Background="#7D3C3C"/>
+                    
+                    <!-- 可见性测试 -->
+                    <TextBlock Text="可见性测试（修复验证）" Foreground="#CCCCCC" Margin="0,0,0,5"/>
+                    <Button Content="测试 Visibility 切换" Click="TestVisibilityToggle_Click" 
+                            Margin="0,0,0,15" Padding="8,5" Background="#5C3C7D"/>
                     
                     <!-- 性能测试 -->
                     <TextBlock Text="性能测试（大规模点云）" Foreground="#CCCCCC" Margin="0,0,0,5"/>

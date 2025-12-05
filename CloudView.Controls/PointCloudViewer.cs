@@ -381,9 +381,11 @@ public partial class PointCloudViewer : Control, IDisposable
     // 鼠标交互
     private bool _isRotating;
     private bool _isDrawingRoi;
+    private bool _isPanning;
     private Point _lastMousePosition;
     private Point _roiStart;
     private Point _roiEnd;
+    private Vector3 _panOffset = Vector3.Zero;
 
     // 模板中的 UI 元素
     private Grid? _glHostGrid;
@@ -550,6 +552,8 @@ void main()
             MouseLeftButtonUp -= OnMouseLeftButtonUp;
             MouseRightButtonDown -= OnMouseRightButtonDown;
             MouseRightButtonUp -= OnMouseRightButtonUp;
+            PreviewMouseDown -= OnPreviewMouseDown;
+            PreviewMouseUp -= OnPreviewMouseUp;
             MouseWheel -= OnMouseWheel;
 
             // 清理 OpenGL 宿主
@@ -601,6 +605,8 @@ void main()
         MouseLeftButtonUp += OnMouseLeftButtonUp;
         MouseRightButtonDown += OnMouseRightButtonDown;
         MouseRightButtonUp += OnMouseRightButtonUp;
+        PreviewMouseDown += OnPreviewMouseDown;
+        PreviewMouseUp += OnPreviewMouseUp;
         MouseWheel += OnMouseWheel;
     }
 
@@ -664,6 +670,11 @@ void main()
         CreateCoordinateAxisAndGrid();
 
         _isInitialized = true;
+        // 如果初始化前已经设置了 Points，则需要重新处理以完成坐标轴和网格的创建
+        if (Points != null && Points.Count > 0)
+        {
+            UpdatePointCloudBuffer(); 
+        }
     }
 
     private nint GetProcAddressFunc(string name)
@@ -1870,6 +1881,40 @@ void main()
             _lastMousePosition = currentPos;
             _needsRender = true;
         }
+        else if (_isPanning)
+        {
+            // 中键平移：左右和上下移动摄像机目标点
+            var delta = currentPos - _lastMousePosition;
+            
+            // 获取摄像机的右向量和上向量用于平移
+            var forward = Vector3.Normalize(_cameraTarget - _cameraPosition);
+            var right = Vector3.Normalize(Vector3.Cross(forward, _cameraUp));
+            var up = Vector3.Normalize(Vector3.Cross(right, forward));
+            
+            // 根据鼠标移动距离计算世界坐标中的平移量
+            // 平移速度与缩放（距离）成正比
+            float panSpeed = _zoom * 0.01f;
+            
+            // 鼠标向左移动时图像向左移动，向上移动时图像向上移动
+            // 因此需要反向平移目标点
+            var panDelta = -right * (float)delta.X * panSpeed - up * (float)delta.Y * panSpeed;
+            
+            // 更新摄像机目标点和平移偏移
+            _cameraTarget += panDelta;
+            _panOffset += panDelta;
+            
+            // 保持摄像机与目标点的距离
+            var direction = _cameraPosition - _cameraTarget;
+            float distance = direction.Length();
+            if (distance > 0)
+            {
+                var normalizedDirection = Vector3.Normalize(direction);
+                _cameraPosition = _cameraTarget + normalizedDirection * _zoom;
+            }
+            
+            _lastMousePosition = currentPos;
+            _needsRender = true;
+        }
     }
 
     /// <summary>
@@ -1956,10 +2001,39 @@ void main()
         ReleaseMouseCapture();
     }
 
+    private void OnMouseMiddleButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _isPanning = true;
+        _lastMousePosition = e.GetPosition(this);
+        CaptureMouse();
+    }
+
+    private void OnMouseMiddleButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        _isPanning = false;
+        ReleaseMouseCapture();
+    }
+
+    private void OnPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.MiddleButton == MouseButtonState.Pressed)
+        {
+            OnMouseMiddleButtonDown(sender, e);
+        }
+    }
+
+    private void OnPreviewMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.MiddleButton == MouseButtonState.Released && _isPanning)
+        {
+            OnMouseMiddleButtonUp(sender, e);
+        }
+    }
+
     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
     {
         _zoom -= e.Delta * 0.005f;
-        _zoom = Math.Clamp(_zoom, 1f, 50f);
+        _zoom = Math.Clamp(_zoom, 0.1f, 100f);
         
         // 保持当前旋转状态，根据当前方向更新摄像机位置
         // 获取摄像机到目标点的当前方向（单位向量）
@@ -2090,6 +2164,8 @@ void main()
         MouseLeftButtonUp -= OnMouseLeftButtonUp;
         MouseRightButtonDown -= OnMouseRightButtonDown;
         MouseRightButtonUp -= OnMouseRightButtonUp;
+        PreviewMouseDown -= OnPreviewMouseDown;
+        PreviewMouseUp -= OnPreviewMouseUp;
         MouseWheel -= OnMouseWheel;
     }
 
@@ -2243,21 +2319,7 @@ void main()
     /// <param name="positions">点的位置列表</param>
     /// <param name="defaultColor">默认颜色</param>
     /// <summary>
-    /// 从 Vector3 列表加载点云数据。
-    /// 
-    /// 输入为 Vector3 位置集合，所有点使用 defaultColor 作为颜色。
-    /// 
-    /// 示例：
-    /// <code>
-    /// var positions = new List&lt;Vector3&gt;
-    /// {
-    ///     new(0, 0, 0),
-    ///     new(1, 0, 0),
-    ///     new(0, 1, 0)
-    /// };
-    /// viewer.LoadFromVector3List(positions, new Vector4(1, 0, 0, 1)); // 红色
-    /// </code>
-    /// 
+    /// 从 Vector3 列表加载点云数据。-
     /// 调用此方法会触发点云缓冲更新和重新渲染。
     /// </summary>
     /// <param name="positions">点位置的 Vector3 列表。</param>

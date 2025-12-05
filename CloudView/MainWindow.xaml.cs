@@ -131,5 +131,69 @@ namespace CloudView
                 PointCloudViewer.MaxZ = float.MaxValue;
             }
         }
+
+        /// <summary>
+        /// 测试 Visibility 从 Collapsed 切换到 Visible 的场景
+        /// 验证修复是否有效：首次显示时是否能正确显示点云
+        /// </summary>
+        private void TestVisibilityToggle_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = DataContext as MainViewModel;
+            if (vm == null) return;
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("🧪 Visibility 切换测试启动");
+            sb.AppendLine("");
+            sb.AppendLine("步骤 1: 隐藏 PointCloudViewer (Visibility.Collapsed)");
+            
+            vm.StatusMessage = sb.ToString();
+
+            // 隐藏点云查看器
+            PointCloudViewer.Visibility = Visibility.Collapsed;
+
+            // 延迟 1 秒后执行后续操作
+            var timer = new System.Windows.Threading.DispatcherTimer();
+            timer.Interval = TimeSpan.FromSeconds(1);
+            int step = 1;
+            
+            timer.Tick += (s, args) =>
+            {
+                step++;
+                if (step == 2)
+                {
+                    sb.AppendLine("✓ 步骤 1 完成：PointCloudViewer 已隐藏");
+                    sb.AppendLine("");
+                    sb.AppendLine("步骤 2: 生成点云数据（PointCloudViewer 仍隐藏）");
+                    vm.StatusMessage = sb.ToString();
+
+                    // 生成点云数据
+                    vm.GenerateSamplePointCloudCommand.Execute(null);
+                }
+                else if (step == 3)
+                {
+                    sb.AppendLine("✓ 步骤 2 完成：点云数据已生成");
+                    sb.AppendLine("");
+                    sb.AppendLine("步骤 3: 显示 PointCloudViewer (Visibility.Visible)");
+                    vm.StatusMessage = sb.ToString();
+
+                    // 显示点云查看器
+                    PointCloudViewer.Visibility = Visibility.Visible;
+                }
+                else if (step == 4)
+                {
+                    sb.AppendLine("✓ 步骤 3 完成：PointCloudViewer 已显示");
+                    sb.AppendLine("");
+                    sb.AppendLine("🎯 测试结果:");
+                    sb.AppendLine("✅ 点云应该直接显示（无需第二次赋值）");
+                    sb.AppendLine("✅ 坐标轴应该可见");
+                    sb.AppendLine("✅ XY 平面网格应该可见");
+                    vm.StatusMessage = sb.ToString();
+
+                    timer.Stop();
+                }
+            };
+
+            timer.Start();
+        }
     }
 }
