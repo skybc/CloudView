@@ -35,11 +35,7 @@
             Grid.Column="0"
             BackgroundColor="#1E1E1E"
             PointSize="{Binding PointSize}"
-            Points="{Binding Points}"
-            RoiBorderColor="#FF0078D7"
-            RoiColor="#500078D7"
-            SelectedIndices="{Binding SelectedIndices, Mode=OneWayToSource}"
-            SelectedPoints="{Binding SelectedPoints, Mode=OneWayToSource}" />
+            Points="{Binding Points}" />
 
         <!--  控制面板  -->
         <TabControl
@@ -317,9 +313,8 @@
                                 LineHeight="20"
                                 TextWrapping="Wrap">
                                 <Run Text="📍 鼠标交互：" /><LineBreak />
-                                <Run Text="• 左键拖拽：绘制 ROI 选择区域" /><LineBreak />
-                                <Run Text="• 右键拖拽：旋转视图" /><LineBreak />
-                                <Run Text="• 中键拖拽：平移视图" /><LineBreak />
+                                <Run Text="• 左键拖拽：旋转视图" /><LineBreak />
+                                <Run Text="• 右键拖拽：平移视图" /><LineBreak />
                                 <Run Text="• 滚轮：缩放视图" /><LineBreak />
                                 <LineBreak />
                                 <Run Text="🎨 功能概览：" /><LineBreak />

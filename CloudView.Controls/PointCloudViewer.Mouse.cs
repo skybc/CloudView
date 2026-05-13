@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Numerics;
 using System.Windows;
 using System.Windows.Input;
@@ -12,20 +11,15 @@ public partial class PointCloudViewer
 
     private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (!AllowDrawingRoi)
-        {
-            return;
-        }
-
-        _isDrawingRoi = true;
-        _roiStart = e.GetPosition(this);
-        _roiEnd = _roiStart;
+        _isRotating = true;
+        _lastMousePosition = e.GetPosition(this);
         CaptureMouse();
     }
 
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
         var currentPos = e.GetPosition(this);
+        const float orbitPitchLimit = 1.5533431f; // 89°，保留一点余量避免接近极点时翻转
 
         int width = (int)ActualWidth;
         int height = (int)ActualHeight;
@@ -36,16 +30,12 @@ public partial class PointCloudViewer
             _needsRender = true;
         }
 
-        if (_isDrawingRoi)
-        {
-            _roiEnd = currentPos;
-            _needsRender = true;
-        }
-        else if (_isRotating)
+        if (_isRotating)
         {
             var delta = currentPos - _lastMousePosition;
             _rotationY += (float)delta.X * 0.01f;
             _rotationX += (float)delta.Y * 0.01f;
+            _rotationX = Math.Clamp(_rotationX, -orbitPitchLimit, orbitPitchLimit);
 
             UpdateCameraPositionWithRotation();
 
@@ -56,24 +46,43 @@ public partial class PointCloudViewer
         {
             var delta = currentPos - _lastMousePosition;
 
-            var forward = Vector3.Normalize(_cameraTarget - _cameraPosition);
-            var right = Vector3.Normalize(Vector3.Cross(forward, _cameraUp));
-            var up = Vector3.Normalize(Vector3.Cross(right, forward));
-
-            float panSpeed = _zoom * 0.01f;
-
-            var panDelta = -right * (float)delta.X * panSpeed - up * (float)delta.Y * panSpeed;
-
-            _cameraTarget += panDelta;
-            _panOffset += panDelta;
-
-            var direction = _cameraPosition - _cameraTarget;
-            float distance = direction.Length();
-            if (distance > 0)
+            // 使用真实的相机-目标点距离计算屏幕像素到世界坐标的换算。
+            // 这样平移手感会随视场和距离自然变化，而不是依赖一个经验缩放系数。
+            float distance = Vector3.Distance(_cameraPosition, _cameraTarget);
+            if (height <= 0 || distance <= 0f)
             {
-                var normalizedDirection = Vector3.Normalize(direction);
-                _cameraPosition = _cameraTarget + normalizedDirection * _zoom;
+                _lastMousePosition = currentPos;
+                _needsRender = true;
+                return;
             }
+
+            float worldPerPixel = 2f * MathF.Tan(_fov * 0.5f * MathF.PI / 180f) * distance / height;
+
+            // 使用稳定的世界上方向，避免在 forward 接近 up 时出现抖动、翻转或 NaN。
+            Vector3 worldUp = Vector3.UnitY;
+
+            var forward = Vector3.Normalize(_cameraTarget - _cameraPosition);
+            var right = Vector3.Cross(forward, worldUp);
+            if (right.LengthSquared() < 1e-6f)
+                right = Vector3.UnitX;
+            else
+                right = Vector3.Normalize(right);
+
+            var up = Vector3.Cross(right, forward);
+            if (up.LengthSquared() > 0f)
+                up = Vector3.Normalize(up);
+
+            var move = (-right * (float)delta.X + up * (float)delta.Y) * worldPerPixel;
+
+            // Pan 必须让相机和目标点一起移动，保持相对关系不变，避免反推相机位置带来的数值误差。
+            _cameraPosition += move;
+            _cameraTarget += move;
+            _panOffset += move;
+
+            // 平移只改变视野中心，不改变相机朝向。
+            // 这里同步旋转参数基准，避免下一次左键旋转仍然沿用旧的欧拉角状态，
+            // 从而出现“旋转中心看起来不对”或旋转跳变。
+            SyncRotationFromCameraOffset();
 
             _lastMousePosition = currentPos;
             _needsRender = true;
@@ -93,93 +102,50 @@ public partial class PointCloudViewer
         _cameraPosition = _cameraTarget + rotatedDirection;
     }
 
+    private void SyncRotationFromCameraOffset()
+    {
+         var direction = _cameraPosition - _cameraTarget;
+        float distance = direction.Length();
+        const float orbitPitchLimit = 1.5533431f; // 89°，避免 pitch 反推后落在极点外
+
+        if (distance <= 0f)
+            return;
+
+        var normalizedDirection = direction / distance;
+
+        // 与 UpdateCameraPositionWithRotation() 的旋转构造保持一致：
+        // 先绕 X，再绕 Y。这样平移后重新建立的欧拉角能准确描述当前相机位置。
+        _rotationX = Math.Clamp(MathF.Asin(Math.Clamp(-normalizedDirection.Y, -1f, 1f)), -orbitPitchLimit, orbitPitchLimit);
+
+        float cosX = MathF.Cos(_rotationX);
+        if (MathF.Abs(cosX) > 1e-6f)
+        {
+            _rotationY = MathF.Atan2(normalizedDirection.X, normalizedDirection.Z);
+        }
+    }
+
     private void OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (_isDrawingRoi)
+        if (_isRotating)
         {
-            _isDrawingRoi = false;
+            _isRotating = false;
             ReleaseMouseCapture();
-
-            _roiEnd = e.GetPosition(this);
-
-            var selectedIndices = new List<int>();
-            var selectedPoints = new List<PointCloudPoint>();
-            var screenRect = GetRoiRect();
-
-            if (Points != null && screenRect.Width > 1 && screenRect.Height > 1)
-            {
-                int width = (int)ActualWidth;
-                int height = (int)ActualHeight;
-
-                var model = Matrix4x4.Identity;
-                var view = CreateLookAtMatrix(_cameraPosition, _cameraTarget, _cameraUp);
-                var projection = CreatePerspectiveMatrix(_fov * MathF.PI / 180f, (float)width / height, 0.1f, 1000f);
-                var mvp = model * view * projection;
-
-                for (int i = 0; i < Points.Count; i++)
-                {
-                    var point = Points[i];
-                    var screenPos = WorldToScreen(point.Position, mvp, width, height);
-
-                    if (screenRect.Contains(screenPos))
-                    {
-                        selectedIndices.Add(i);
-                        selectedPoints.Add(point);
-                    }
-                }
-            }
-
-            SelectedIndices = selectedIndices;
-            SelectedPoints = selectedPoints;
-
-            var args = new RoiSelectionEventArgs(selectedIndices, selectedPoints, screenRect);
-            args.RoutedEvent = RoiSelectedEvent;
-            args.Source = this;
-            RaiseEvent(args);
-
-            _needsRender = true;
         }
     }
 
     private void OnMouseRightButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        _isRotating = true;
-        _lastMousePosition = e.GetPosition(this);
-        CaptureMouse();
-    }
-
-    private void OnMouseRightButtonUp(object sender, MouseButtonEventArgs e)
-    {
-        _isRotating = false;
-        ReleaseMouseCapture();
-    }
-
-    private void OnMouseMiddleButtonDown(object sender, MouseButtonEventArgs e)
     {
         _isPanning = true;
         _lastMousePosition = e.GetPosition(this);
         CaptureMouse();
     }
 
-    private void OnMouseMiddleButtonUp(object sender, MouseButtonEventArgs e)
+    private void OnMouseRightButtonUp(object sender, MouseButtonEventArgs e)
     {
-        _isPanning = false;
-        ReleaseMouseCapture();
-    }
-
-    private void OnPreviewMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.MiddleButton == MouseButtonState.Pressed)
+        if (_isPanning)
         {
-            OnMouseMiddleButtonDown(sender, e);
-        }
-    }
-
-    private void OnPreviewMouseUp(object sender, MouseButtonEventArgs e)
-    {
-        if (e.MiddleButton == MouseButtonState.Released && _isPanning)
-        {
-            OnMouseMiddleButtonUp(sender, e);
+            _isPanning = false;
+            ReleaseMouseCapture();
         }
     }
 
@@ -201,16 +167,11 @@ public partial class PointCloudViewer
             _cameraPosition = _cameraTarget + new Vector3(0, 0, _zoom);
         }
 
-        _needsRender = true;
-    }
+        // 滚轮缩放只改变相机到目标点的距离，不改变当前朝向。
+        // 同步旋转基准，保证随后左键 Orbit 时不会因为沿用旧欧拉角而突然跳变或看起来“放大/缩小”。
+        SyncRotationFromCameraOffset();
 
-    private Rect GetRoiRect()
-    {
-        double left = Math.Min(_roiStart.X, _roiEnd.X);
-        double top = Math.Min(_roiStart.Y, _roiEnd.Y);
-        double width = Math.Abs(_roiEnd.X - _roiStart.X);
-        double height = Math.Abs(_roiEnd.Y - _roiStart.Y);
-        return new Rect(left, top, width, height);
+        _needsRender = true;
     }
 
     private static Point WorldToScreen(Vector3 worldPos, Matrix4x4 mvp, int width, int height)

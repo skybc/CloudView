@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Silk.NET.OpenGL;
@@ -122,17 +122,6 @@ public partial class PointCloudViewer
                 _gridVbo = 0;
             }
 
-            if (_roiVao != 0)
-            {
-                _gl.DeleteVertexArray(_roiVao);
-                _roiVao = 0;
-            }
-            if (_roiVbo != 0)
-            {
-                _gl.DeleteBuffer(_roiVbo);
-                _roiVbo = 0;
-            }
-
             if (_overlayVao != 0)
             {
                 _gl.DeleteVertexArray(_overlayVao);
@@ -172,6 +161,22 @@ public partial class PointCloudViewer
                 _cachedTextTexture = 0;
                 _cachedTextContent = string.Empty;
             }
+
+            if (_gizmoVao != 0)
+            {
+                _gl.DeleteVertexArray(_gizmoVao);
+                _gizmoVao = 0;
+            }
+            if (_gizmoVbo != 0)
+            {
+                _gl.DeleteBuffer(_gizmoVbo);
+                _gizmoVbo = 0;
+            }
+            foreach (var kvp in _gizmoTextCache)
+            {
+                _gl.DeleteTexture(kvp.Value.texture);
+            }
+            _gizmoTextCache.Clear();
 
             CleanupSharpBuffers();
 

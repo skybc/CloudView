@@ -16,7 +16,7 @@ namespace CloudView
             InitializeComponent();
             
             // 订阅 ROI 选择事件
-            PointCloudViewer.RoiSelected += OnRoiSelected;
+            //PointCloudViewer.RoiSelected += OnRoiSelected;
         }
 
         private void OnRoiSelected(object? sender, RoiSelectionEventArgs e)

@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dotnet build *)"
+      "Bash(dotnet build *)",
+      "Bash(xxd \"C:/Users/baochun/source/repos/CloudView/CloudView/MainWindow.xaml.cs\")",
+      "Bash(git checkout *)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 *)",
+      "Bash(python *)"
     ]
   }
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -45,20 +45,6 @@ public partial class PointCloudViewer : Control, IDisposable
             typeof(PointCloudViewer),
             new PropertyMetadata(Colors.Black, OnRenderPropertyChanged));
 
-    public static readonly DependencyProperty RoiColorProperty =
-        DependencyProperty.Register(
-            nameof(RoiColor),
-            typeof(Color),
-            typeof(PointCloudViewer),
-            new PropertyMetadata(Color.FromArgb(80, 0, 120, 215), OnRenderPropertyChanged));
-
-    public static readonly DependencyProperty RoiBorderColorProperty =
-        DependencyProperty.Register(
-            nameof(RoiBorderColor),
-            typeof(Color),
-            typeof(PointCloudViewer),
-            new PropertyMetadata(Color.FromArgb(255, 0, 120, 215), OnRenderPropertyChanged));
-
     public static readonly DependencyProperty SelectedPointsProperty =
         DependencyProperty.Register(
             nameof(SelectedPoints),
@@ -83,13 +69,6 @@ public partial class PointCloudViewer : Control, IDisposable
     public static readonly DependencyProperty ShowGridProperty =
         DependencyProperty.Register(
             nameof(ShowGrid),
-            typeof(bool),
-            typeof(PointCloudViewer),
-            new PropertyMetadata(true, OnRenderPropertyChanged));
-
-    public static readonly DependencyProperty AllowDrawingRoiProperty =
-        DependencyProperty.Register(
-            nameof(AllowDrawingRoi),
             typeof(bool),
             typeof(PointCloudViewer),
             new PropertyMetadata(true, OnRenderPropertyChanged));
@@ -154,18 +133,6 @@ public partial class PointCloudViewer : Control, IDisposable
         set => SetValue(BackgroundColorProperty, value);
     }
 
-    public Color RoiColor
-    {
-        get => (Color)GetValue(RoiColorProperty);
-        set => SetValue(RoiColorProperty, value);
-    }
-
-    public Color RoiBorderColor
-    {
-        get => (Color)GetValue(RoiBorderColorProperty);
-        set => SetValue(RoiBorderColorProperty, value);
-    }
-
     public IReadOnlyList<PointCloudPoint>? SelectedPoints
     {
         get => (IReadOnlyList<PointCloudPoint>?)GetValue(SelectedPointsProperty);
@@ -188,12 +155,6 @@ public partial class PointCloudViewer : Control, IDisposable
     {
         get => (bool)GetValue(ShowGridProperty);
         set => SetValue(ShowGridProperty, value);
-    }
-
-    public bool AllowDrawingRoi
-    {
-        get => (bool)GetValue(AllowDrawingRoiProperty);
-        set => SetValue(AllowDrawingRoiProperty, value);
     }
 
     public float MinX
@@ -236,19 +197,6 @@ public partial class PointCloudViewer : Control, IDisposable
 
     #region 事件
 
-    public static readonly RoutedEvent RoiSelectedEvent =
-        EventManager.RegisterRoutedEvent(
-            nameof(RoiSelected),
-            RoutingStrategy.Bubble,
-            typeof(EventHandler<RoiSelectionEventArgs>),
-            typeof(PointCloudViewer));
-
-    public event EventHandler<RoiSelectionEventArgs>? RoiSelected
-    {
-        add => AddHandler(RoiSelectedEvent, value);
-        remove => RemoveHandler(RoiSelectedEvent, value);
-    }
-
     public static readonly RoutedEvent MousePositionChangedEvent =
         EventManager.RegisterRoutedEvent(
             nameof(MousePositionChanged),
@@ -280,8 +228,6 @@ public partial class PointCloudViewer : Control, IDisposable
     private uint _textVbo;
     private uint _vao;
     private uint _vbo;
-    private uint _roiVao;
-    private uint _roiVbo;
     private int _vertexCount;
 
     private uint _axisVao;
@@ -303,11 +249,8 @@ public partial class PointCloudViewer : Control, IDisposable
     private Vector3 _pointCloudCenter = Vector3.Zero;
 
     private bool _isRotating;
-    private bool _isDrawingRoi;
     private bool _isPanning;
     private Point _lastMousePosition;
-    private Point _roiStart;
-    private Point _roiEnd;
     private Vector3 _panOffset = Vector3.Zero;
 
     private Grid? _glHostGrid;
@@ -325,6 +268,10 @@ public partial class PointCloudViewer : Control, IDisposable
     private string _cachedTextContent = string.Empty;
     private int _cachedTextWidth;
     private int _cachedTextHeight;
+
+    private uint _gizmoVao;
+    private uint _gizmoVbo;
+    private readonly Dictionary<string, (uint texture, int width, int height)> _gizmoTextCache = new();
 
     private int _currentLodLevel;
     private bool _useLod = true;
@@ -367,8 +314,6 @@ public partial class PointCloudViewer : Control, IDisposable
             MouseLeftButtonUp -= OnMouseLeftButtonUp;
             MouseRightButtonDown -= OnMouseRightButtonDown;
             MouseRightButtonUp -= OnMouseRightButtonUp;
-            PreviewMouseDown -= OnPreviewMouseDown;
-            PreviewMouseUp -= OnPreviewMouseUp;
             MouseWheel -= OnMouseWheel;
 
             if (_glHost != null)
@@ -404,10 +349,6 @@ public partial class PointCloudViewer : Control, IDisposable
         _glHostGrid.Children.Add(_glHost);
     }
 
-    private void UpdateRoiRectangleStyle()
-    {
-    }
-
     #region 事件处理
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -423,8 +364,6 @@ public partial class PointCloudViewer : Control, IDisposable
         MouseLeftButtonUp += OnMouseLeftButtonUp;
         MouseRightButtonDown += OnMouseRightButtonDown;
         MouseRightButtonUp += OnMouseRightButtonUp;
-        PreviewMouseDown += OnPreviewMouseDown;
-        PreviewMouseUp += OnPreviewMouseUp;
         MouseWheel += OnMouseWheel;
     }
 
@@ -447,8 +386,6 @@ public partial class PointCloudViewer : Control, IDisposable
         MouseLeftButtonUp -= OnMouseLeftButtonUp;
         MouseRightButtonDown -= OnMouseRightButtonDown;
         MouseRightButtonUp -= OnMouseRightButtonUp;
-        PreviewMouseDown -= OnPreviewMouseDown;
-        PreviewMouseUp -= OnPreviewMouseUp;
         MouseWheel -= OnMouseWheel;
     }
 
@@ -477,10 +414,6 @@ public partial class PointCloudViewer : Control, IDisposable
     {
         if (d is PointCloudViewer viewer)
         {
-            if (e.Property == RoiColorProperty || e.Property == RoiBorderColorProperty)
-            {
-                viewer.UpdateRoiRectangleStyle();
-            }
             viewer._needsRender = true;
         }
     }

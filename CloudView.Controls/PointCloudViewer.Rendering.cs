@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -176,34 +176,13 @@ void main()
             _gl.BindVertexArray(0);
         }
 
-        // 绘制 ROI 矩形
-        if (_isDrawingRoi)
-        {
-            DrawRoiRectangle();
-        }
-
         // 绘制右上角鼠标位置信息覆盖层
         DrawOverlay(width, height);
 
+        // 绘制右下角坐标轴指示器
+        DrawOrientationGizmo(width, height);
+
         Win32Interop.SwapBuffers(_hDC);
-    }
-
-    private unsafe void DrawRoiRectangle()
-    {
-        if (_gl == null) return;
-
-        var roiRect = GetRoiRect();
-        int width = (int)ActualWidth;
-        int height = (int)ActualHeight;
-
-        _gl.Disable(EnableCap.DepthTest);
-
-        var orthoProjection = CreateOrthoMatrix(0, width, height, 0, -1, 1);
-
-        DrawRoiBorder(roiRect, orthoProjection);
-        DrawRoiFill(roiRect, orthoProjection);
-
-        _gl.Enable(EnableCap.DepthTest);
     }
 
     private unsafe void DrawOverlay(int width, int height)
@@ -378,6 +357,200 @@ void main()
         _gl.BindVertexArray(0);
     }
 
+    private unsafe void DrawOrientationGizmo(int width, int height)
+    {
+        if (_gl == null || _overlayShaderProgram == 0) return;
+
+        const int gizmoSize = 80;
+        const int margin = 20;
+
+        float centerX = width - margin - gizmoSize / 2f;
+        float centerY = height - margin - gizmoSize / 2f;
+        float axisPixelLength = gizmoSize * 0.4f;
+
+        var view = CreateLookAtMatrix(_cameraPosition, _cameraTarget, _cameraUp);
+
+        var xProj = Vector3.TransformNormal(Vector3.UnitX, view);
+        var yProj = Vector3.TransformNormal(Vector3.UnitY, view);
+        var zProj = Vector3.TransformNormal(Vector3.UnitZ, view);
+
+        var axes = new (float px, float py, float pz, Vector4 color, string label)[]
+        {
+            (xProj.X, xProj.Y, xProj.Z, new Vector4(1, 0.2f, 0.2f, 1), "X"),
+            (yProj.X, yProj.Y, yProj.Z, new Vector4(0.2f, 1, 0.2f, 1), "Y"),
+            (zProj.X, zProj.Y, zProj.Z, new Vector4(0.2f, 0.2f, 1, 1), "Z"),
+        };
+
+        // Sort by depth: draw far axes first (painter's algorithm)
+        Array.Sort(axes, (a, b) => a.pz.CompareTo(b.pz));
+
+        // Background quad + axis lines in one vertex buffer
+        var verticesList = new List<float>();
+
+        float bgHalfSize = gizmoSize / 2f + 6;
+        float bgLeftNdc = (centerX - bgHalfSize) / width * 2 - 1;
+        float bgRightNdc = (centerX + bgHalfSize) / width * 2 - 1;
+        float bgTopNdc = 1 - (centerY - bgHalfSize) / height * 2;
+        float bgBottomNdc = 1 - (centerY + bgHalfSize) / height * 2;
+
+        // Background: 4 vertices for triangle strip
+        float bgR = 0, bgG = 0, bgB = 0, bgA = 0.5f;
+        verticesList.Add(bgLeftNdc); verticesList.Add(bgTopNdc); verticesList.Add(bgR); verticesList.Add(bgG); verticesList.Add(bgB); verticesList.Add(bgA);
+        verticesList.Add(bgRightNdc); verticesList.Add(bgTopNdc); verticesList.Add(bgR); verticesList.Add(bgG); verticesList.Add(bgB); verticesList.Add(bgA);
+        verticesList.Add(bgLeftNdc); verticesList.Add(bgBottomNdc); verticesList.Add(bgR); verticesList.Add(bgG); verticesList.Add(bgB); verticesList.Add(bgA);
+        verticesList.Add(bgRightNdc); verticesList.Add(bgBottomNdc); verticesList.Add(bgR); verticesList.Add(bgG); verticesList.Add(bgB); verticesList.Add(bgA);
+
+        // Axis lines
+        float ndcCenterX = (centerX / width) * 2 - 1;
+        float ndcCenterY = 1 - (centerY / height) * 2;
+
+        foreach (var axis in axes)
+        {
+            float endPixelX = centerX + axis.px * axisPixelLength;
+            float endPixelY = centerY - axis.py * axisPixelLength;
+
+            float ndcEndX = (endPixelX / width) * 2 - 1;
+            float ndcEndY = 1 - (endPixelY / height) * 2;
+
+            float alpha = axis.pz < 0 ? 0.35f : 1.0f;
+            var c = axis.color;
+
+            verticesList.Add(ndcCenterX); verticesList.Add(ndcCenterY);
+            verticesList.Add(c.X); verticesList.Add(c.Y); verticesList.Add(c.Z); verticesList.Add(alpha);
+
+            verticesList.Add(ndcEndX); verticesList.Add(ndcEndY);
+            verticesList.Add(c.X); verticesList.Add(c.Y); verticesList.Add(c.Z); verticesList.Add(alpha);
+        }
+
+        var vertices = verticesList.ToArray();
+
+        if (_gizmoVao == 0)
+        {
+            _gizmoVao = _gl.GenVertexArray();
+            _gizmoVbo = _gl.GenBuffer();
+        }
+
+        _gl.BindVertexArray(_gizmoVao);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _gizmoVbo);
+
+        fixed (float* data = vertices)
+        {
+            _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(float)), data, BufferUsageARB.DynamicDraw);
+        }
+
+        uint stride = 6 * sizeof(float);
+        _gl.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, stride, (void*)0);
+        _gl.EnableVertexAttribArray(0);
+        _gl.VertexAttribPointer(1, 4, VertexAttribPointerType.Float, false, stride, (void*)(2 * sizeof(float)));
+        _gl.EnableVertexAttribArray(1);
+
+        _gl.Enable(EnableCap.Blend);
+        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+        _gl.Disable(EnableCap.DepthTest);
+
+        _gl.UseProgram(_overlayShaderProgram);
+
+        _gl.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
+
+        _gl.LineWidth(2.0f);
+        _gl.DrawArrays(PrimitiveType.Lines, 4, 6);
+        _gl.LineWidth(1.0f);
+
+        _gl.Enable(EnableCap.DepthTest);
+        _gl.Disable(EnableCap.Blend);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+        _gl.BindVertexArray(0);
+
+        // Draw axis labels
+        const float labelFontSize = 16;
+        const float labelOffset = 12;
+
+        foreach (var axis in axes)
+        {
+            float endPixelX = centerX + axis.px * axisPixelLength;
+            float endPixelY = centerY - axis.py * axisPixelLength;
+
+            float labelX = endPixelX + axis.px * labelOffset;
+            float labelY = endPixelY - axis.py * labelOffset - 6;
+
+            float alpha = axis.pz < 0 ? 0.35f : 1.0f;
+            var labelColor = axis.color;
+            labelColor.W = alpha;
+
+            DrawTextWithColor(axis.label, labelX, labelY, labelFontSize, width, height, labelColor);
+        }
+    }
+
+    private unsafe void DrawTextWithColor(string text, float pixelX, float pixelY, float fontSize, int windowWidth, int windowHeight, Vector4 color)
+    {
+        if (_gl == null || _textShaderProgram == 0) return;
+
+        if (!_gizmoTextCache.TryGetValue(text, out var cache))
+        {
+            int texWidth, texHeight;
+            uint texture = CreateMultiLineTextTexture(text, (int)fontSize, out texWidth, out texHeight);
+            cache = (texture, texWidth, texHeight);
+            _gizmoTextCache[text] = cache;
+        }
+
+        float left = pixelX;
+        float top = pixelY;
+        float right = pixelX + cache.width;
+        float bottom = pixelY + cache.height;
+
+        var vertices = new float[]
+        {
+            left, top, 0, 1,
+            right, top, 1, 1,
+            left, bottom, 0, 0,
+            right, bottom, 1, 0
+        };
+
+        if (_textVao == 0)
+        {
+            _textVao = _gl.GenVertexArray();
+            _textVbo = _gl.GenBuffer();
+        }
+
+        _gl.BindVertexArray(_textVao);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _textVbo);
+
+        fixed (float* data = vertices)
+        {
+            _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(float)), data, BufferUsageARB.DynamicDraw);
+        }
+
+        _gl.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), (void*)0);
+        _gl.EnableVertexAttribArray(0);
+        _gl.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+        _gl.EnableVertexAttribArray(1);
+
+        _gl.UseProgram(_textShaderProgram);
+
+        var orthoProjection = Matrix4x4.CreateOrthographicOffCenter(0, windowWidth, windowHeight, 0, -1, 1);
+        SetUniformMatrix4(_gl, _textShaderProgram, "uProjection", orthoProjection);
+
+        int colorLoc = _gl.GetUniformLocation(_textShaderProgram, "uColor");
+        _gl.Uniform4(colorLoc, color.X, color.Y, color.Z, color.W);
+
+        int texLoc = _gl.GetUniformLocation(_textShaderProgram, "uTexture");
+        _gl.Uniform1(texLoc, 0);
+
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture2D, cache.texture);
+
+        _gl.Enable(EnableCap.Blend);
+        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+        _gl.Disable(EnableCap.DepthTest);
+
+        _gl.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
+
+        _gl.Enable(EnableCap.DepthTest);
+        _gl.Disable(EnableCap.Blend);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+        _gl.BindVertexArray(0);
+    }
+
     private unsafe uint CreateMultiLineTextTexture(string text, int fontSize, out int texWidth, out int texHeight)
     {
         var formattedText = new System.Windows.Media.FormattedText(
@@ -429,96 +602,6 @@ void main()
         _gl.BindTexture(TextureTarget.Texture2D, 0);
 
         return texture;
-    }
-
-    private unsafe void DrawRoiBorder(Rect roiRect, Matrix4x4 projection)
-    {
-        if (_gl == null) return;
-
-        var roiBorderColor = RoiBorderColor;
-        var vertices = new float[]
-        {
-            (float)roiRect.Left, (float)roiRect.Top, 0, roiBorderColor.R / 255f, roiBorderColor.G / 255f, roiBorderColor.B / 255f, roiBorderColor.A / 255f,
-            (float)roiRect.Right, (float)roiRect.Top, 0, roiBorderColor.R / 255f, roiBorderColor.G / 255f, roiBorderColor.B / 255f, roiBorderColor.A / 255f,
-            (float)roiRect.Right, (float)roiRect.Bottom, 0, roiBorderColor.R / 255f, roiBorderColor.G / 255f, roiBorderColor.B / 255f, roiBorderColor.A / 255f,
-            (float)roiRect.Left, (float)roiRect.Bottom, 0, roiBorderColor.R / 255f, roiBorderColor.G / 255f, roiBorderColor.B / 255f, roiBorderColor.A / 255f,
-            (float)roiRect.Left, (float)roiRect.Top, 0, roiBorderColor.R / 255f, roiBorderColor.G / 255f, roiBorderColor.B / 255f, roiBorderColor.A / 255f,
-        };
-
-        if (_roiVao == 0)
-        {
-            _roiVao = _gl.GenVertexArray();
-            _roiVbo = _gl.GenBuffer();
-        }
-
-        _gl.BindVertexArray(_roiVao);
-        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _roiVbo);
-
-        fixed (float* data = vertices)
-        {
-            _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(float)), data, BufferUsageARB.DynamicDraw);
-        }
-
-        _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 7 * sizeof(float), (void*)0);
-        _gl.EnableVertexAttribArray(0);
-
-        _gl.VertexAttribPointer(1, 4, VertexAttribPointerType.Float, false, 7 * sizeof(float), (void*)(3 * sizeof(float)));
-        _gl.EnableVertexAttribArray(1);
-
-        _gl.UseProgram(_shaderProgram);
-        SetUniformMatrix4(_gl, _shaderProgram, "uModel", Matrix4x4.Identity);
-        SetUniformMatrix4(_gl, _shaderProgram, "uView", Matrix4x4.Identity);
-        SetUniformMatrix4(_gl, _shaderProgram, "uProjection", projection);
-
-        _gl.LineWidth(2.0f);
-        _gl.DrawArrays(PrimitiveType.LineStrip, 0, 5);
-        _gl.LineWidth(1.0f);
-
-        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
-        _gl.BindVertexArray(0);
-    }
-
-    private unsafe void DrawRoiFill(Rect roiRect, Matrix4x4 projection)
-    {
-        if (_gl == null) return;
-
-        var roiColor = RoiColor;
-        var vertices = new float[]
-        {
-            (float)roiRect.Left, (float)roiRect.Top, 0, roiColor.R / 255f, roiColor.G / 255f, roiColor.B / 255f, roiColor.A / 255f,
-            (float)roiRect.Right, (float)roiRect.Top, 0, roiColor.R / 255f, roiColor.G / 255f, roiColor.B / 255f, roiColor.A / 255f,
-            (float)roiRect.Right, (float)roiRect.Bottom, 0, roiColor.R / 255f, roiColor.G / 255f, roiColor.B / 255f, roiColor.A / 255f,
-            (float)roiRect.Left, (float)roiRect.Bottom, 0, roiColor.R / 255f, roiColor.G / 255f, roiColor.B / 255f, roiColor.A / 255f,
-        };
-
-        _gl.BindVertexArray(_roiVao);
-        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _roiVbo);
-
-        fixed (float* data = vertices)
-        {
-            _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(float)), data, BufferUsageARB.DynamicDraw);
-        }
-
-        _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 7 * sizeof(float), (void*)0);
-        _gl.EnableVertexAttribArray(0);
-
-        _gl.VertexAttribPointer(1, 4, VertexAttribPointerType.Float, false, 7 * sizeof(float), (void*)(3 * sizeof(float)));
-        _gl.EnableVertexAttribArray(1);
-
-        _gl.UseProgram(_shaderProgram);
-        SetUniformMatrix4(_gl, _shaderProgram, "uModel", Matrix4x4.Identity);
-        SetUniformMatrix4(_gl, _shaderProgram, "uView", Matrix4x4.Identity);
-        SetUniformMatrix4(_gl, _shaderProgram, "uProjection", projection);
-
-        _gl.Enable(EnableCap.Blend);
-        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-
-        _gl.DrawArrays(PrimitiveType.TriangleFan, 0, 4);
-
-        _gl.Disable(EnableCap.Blend);
-
-        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
-        _gl.BindVertexArray(0);
     }
 
     #endregion
