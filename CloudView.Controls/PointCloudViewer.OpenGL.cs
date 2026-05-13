@@ -43,6 +43,7 @@ public partial class PointCloudViewer
             throw new Exception("Failed to make OpenGL context current");
 
         _gl = GL.GetApi(GetProcAddressFunc);
+        _gl.Enable(EnableCap.Multisample);
 
         InitializeShaders();
         InitializeTextShaders();

@@ -351,12 +351,19 @@ public partial class PointCloudViewer : Control, IDisposable
     private RoiBase? _activeRoi;
     private RoiHandleVisual? _activeRoiHandle;
     private RoiInteractionMode _roiInteractionMode;
+    private bool _isLeftGesturePending;
+    private bool _leftGestureMoved;
+    private Point _leftGestureStartPoint;
+    private RoiBase? _pendingSelectionRoi;
+    private RoiBase? _pendingMoveRoi;
+    private RoiHandleVisual? _pendingHandle;
     private Vector3 _interactionPlanePoint;
     private Vector3 _interactionPlaneNormal = Vector3.UnitZ;
     private Vector3 _lastInteractionWorldPoint;
     private Point _lastInteractionScreenPoint;
     private RoiFilterResult _activeRoiFilterResult = RoiFilterResult.Empty;
     private RoiStatisticsResult _activeRoiStatisticsResult = RoiStatisticsResult.Empty;
+    private const double RoiClickMoveThreshold = 4.0;
 
     private int _currentLodLevel;
     private bool _useLod = true;
@@ -561,6 +568,12 @@ public partial class PointCloudViewer : Control, IDisposable
     #endregion
 
     private partial bool TryBeginRoiInteraction(Point position);
+
+    private partial bool TryPromotePendingLeftGestureToAction(Point currentPosition);
+
+    private partial void CompletePendingLeftGestureSelection();
+
+    private partial void ClearPendingLeftGestureState();
 
     private partial void UpdateRoiInteraction(Point currentPosition);
 

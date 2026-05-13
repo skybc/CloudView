@@ -387,23 +387,8 @@ void main()
         // Sort by depth: draw far axes first (painter's algorithm)
         Array.Sort(axes, (a, b) => a.pz.CompareTo(b.pz));
 
-        // Background quad + axis lines in one vertex buffer
+        // Axis lines only
         var verticesList = new List<float>();
-
-        float bgHalfSize = gizmoSize / 2f + 6;
-        float bgLeftNdc = (centerX - bgHalfSize) / width * 2 - 1;
-        float bgRightNdc = (centerX + bgHalfSize) / width * 2 - 1;
-        float bgTopNdc = 1 - (centerY - bgHalfSize) / height * 2;
-        float bgBottomNdc = 1 - (centerY + bgHalfSize) / height * 2;
-
-        // Background: 4 vertices for triangle strip
-        float bgR = 0, bgG = 0, bgB = 0, bgA = 0.5f;
-        verticesList.Add(bgLeftNdc); verticesList.Add(bgTopNdc); verticesList.Add(bgR); verticesList.Add(bgG); verticesList.Add(bgB); verticesList.Add(bgA);
-        verticesList.Add(bgRightNdc); verticesList.Add(bgTopNdc); verticesList.Add(bgR); verticesList.Add(bgG); verticesList.Add(bgB); verticesList.Add(bgA);
-        verticesList.Add(bgLeftNdc); verticesList.Add(bgBottomNdc); verticesList.Add(bgR); verticesList.Add(bgG); verticesList.Add(bgB); verticesList.Add(bgA);
-        verticesList.Add(bgRightNdc); verticesList.Add(bgBottomNdc); verticesList.Add(bgR); verticesList.Add(bgG); verticesList.Add(bgB); verticesList.Add(bgA);
-
-        // Axis lines
         float ndcCenterX = (centerX / width) * 2 - 1;
         float ndcCenterY = 1 - (centerY / height) * 2;
 
@@ -453,10 +438,8 @@ void main()
 
         _gl.UseProgram(_overlayShaderProgram);
 
-        _gl.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
-
         _gl.LineWidth(2.0f);
-        _gl.DrawArrays(PrimitiveType.Lines, 4, 6);
+        _gl.DrawArrays(PrimitiveType.Lines, 0, 6);
         _gl.LineWidth(1.0f);
 
         _gl.Enable(EnableCap.DepthTest);

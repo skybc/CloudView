@@ -12,20 +12,20 @@
     Height="800"
     mc:Ignorable="d">
     <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
     </Window.Resources>
     <Window.DataContext>
-        <vm:MainViewModel />
+        <vm:MainViewModel/>
     </Window.DataContext>
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition />
-            <RowDefinition Height="auto" />
+            <RowDefinition/>
+            <RowDefinition Height="auto"/>
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="200" />
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="200"/>
         </Grid.ColumnDefinitions>
 
         <!--  点云显示区域  -->
@@ -35,7 +35,7 @@
             Grid.Column="0"
             BackgroundColor="#1E1E1E"
             PointSize="{Binding PointSize}"
-            Points="{Binding Points}" />
+            Points="{Binding Points}"/>
 
         <!--  控制面板  -->
         <TabControl
@@ -43,55 +43,57 @@
             Padding="0"
             Background="#2D2D30">
             <TabItem Header="数据">
-                <ScrollViewer Padding="10" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Padding="10"
+                              VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <TextBlock
                             Margin="0,0,0,8"
                             FontSize="12"
                             FontWeight="Bold"
                             Foreground="#4EC9B0"
-                            Text="生成点云" />
+                            Text="生成点云"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Command="{Binding GenerateSamplePointCloudCommand}"
-                            Content="球形点云" />
+                            Content="球形点云"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Command="{Binding GenerateCubePointCloudCommand}"
-                            Content="立方体点云" />
+                            Content="立方体点云"/>
                         <Button
                             Margin="0,0,0,15"
                             Padding="8,5"
                             Command="{Binding GenerateSpiralPointCloudCommand}"
-                            Content="螺旋点云" />
+                            Content="螺旋点云"/>
 
                         <TextBlock
                             Margin="0,0,0,8"
                             FontSize="12"
                             FontWeight="Bold"
                             Foreground="#4EC9B0"
-                            Text="点大小控制" />
-                        <StackPanel Margin="0,0,0,15" Orientation="Horizontal">
+                            Text="点大小控制"/>
+                        <StackPanel Margin="0,0,0,15"
+                                    Orientation="Horizontal">
                             <Button
                                 Width="40"
                                 Margin="0,0,5,0"
                                 Padding="5"
                                 Command="{Binding DecreasePointSizeCommand}"
-                                Content="-" />
+                                Content="-"/>
                             <TextBlock
                                 Width="40"
                                 VerticalAlignment="Center"
                                 Foreground="White"
                                 Text="{Binding PointSize, StringFormat={}{0:F1}}"
-                                TextAlignment="Center" />
+                                TextAlignment="Center"/>
                             <Button
                                 Width="40"
                                 Margin="5,0,0,0"
                                 Padding="5"
                                 Command="{Binding IncreasePointSizeCommand}"
-                                Content="+" />
+                                Content="+"/>
                         </StackPanel>
 
                         <TextBlock
@@ -99,271 +101,275 @@
                             FontSize="12"
                             FontWeight="Bold"
                             Foreground="#4EC9B0"
-                            Text="坐标范围限制" />
+                            Text="坐标范围限制"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#3C7D7D"
                             Click="TestRangeFilter_Click"
-                            Content="测试范围限制 1" />
+                            Content="测试范围限制 1"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#3C7D7D"
                             Click="TestRangeFilter2_Click"
-                            Content="测试范围限制 2" />
+                            Content="测试范围限制 2"/>
                         <Button
                             Margin="0,0,0,15"
                             Padding="8,5"
                             Background="#4D4D00"
                             Click="ResetRangeFilter_Click"
-                            Content="重置范围限制" />
+                            Content="重置范围限制"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
             <TabItem Header="视图">
-                <ScrollViewer Padding="10" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Padding="10"
+                              VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <TextBlock
                             Margin="0,0,0,8"
                             FontSize="12"
                             FontWeight="Bold"
                             Foreground="#4EC9B0"
-                            Text="视图控制" />
+                            Text="视图控制"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Click="ResetView_Click"
-                            Content="重置视图" />
+                            Content="重置视图"/>
                         <Button
                             Margin="0,0,0,15"
                             Padding="8,5"
                             Click="FitToView_Click"
-                            Content="适应视图" />
+                            Content="适应视图"/>
 
                         <TextBlock
                             Margin="0,0,0,8"
                             FontSize="12"
                             FontWeight="Bold"
                             Foreground="#4EC9B0"
-                            Text="对象渲染" />
+                            Text="对象渲染"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#6B3B9D"
                             Click="TestPanelSharp_Rectangle_Click"
-                            Content="显示面片（矩形）" />
+                            Content="显示面片（矩形）"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#6B3B9D"
                             Click="TestPanelSharp_Triangle_Click"
-                            Content="显示面片（三角形）" />
+                            Content="显示面片（三角形）"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#4B5B9D"
                             Click="TestPanelSharp_Mixed_Click"
-                            Content="混合：点云+面片" />
+                            Content="混合：点云+面片"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#7D6B3B"
                             Click="TestLineSharp_Click"
-                            Content="显示线条（坐标轴）" />
+                            Content="显示线条（坐标轴）"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#7D6B3B"
                             Click="TestLineSharp_Wireframe_Click"
-                            Content="显示线条（网格）" />
+                            Content="显示线条（网格）"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#3B6B7D"
                             Click="TestVolumeSharp_Click"
-                            Content="显示体积（多面体）" />
+                            Content="显示体积（多面体）"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#5B3B7D"
                             Click="TestSphereSharp_Click"
-                            Content="显示球体" />
+                            Content="显示球体"/>
                         <Button
                             Margin="0,0,0,15"
                             Padding="8,5"
                             Background="#7D5B3B"
                             Click="TestCylinderSharp_Click"
-                            Content="显示圆柱" />
+                            Content="显示圆柱"/>
 
                         <TextBlock
                             Margin="0,0,0,8"
                             FontSize="12"
                             FontWeight="Bold"
                             Foreground="#4EC9B0"
-                            Text="选择信息" />
+                            Text="选择信息"/>
                         <Border
                             Padding="10"
                             Background="#3C3C3C"
                             CornerRadius="4">
                             <TextBlock Foreground="#AAAAAA">
-                                <Run Text="选中点数: " />
-                                <Run Foreground="#4EC9B0" Text="{Binding SelectedPointCount}" />
+                                <Run Text="选中点数: "/>
+                                <Run Foreground="#4EC9B0"
+                                     Text="{Binding SelectedPointCount}"/>
                             </TextBlock>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
             <TabItem Header="测试">
-                <ScrollViewer Padding="10" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Padding="10"
+                              VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <TextBlock
                             Margin="0,0,0,8"
                             FontSize="12"
                             FontWeight="Bold"
                             Foreground="#4EC9B0"
-                            Text="中心定位测试" />
+                            Text="中心定位测试"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#3C7D3C"
                             Command="{Binding GenerateTestPointCloudCommand}"
-                            Content="测试点云（中心原点）" />
+                            Content="测试点云（中心原点）"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#3C7D3C"
                             Command="{Binding GenerateOffsetTestPointCloudCommand}"
-                            Content="测试点云（中心偏移）" />
+                            Content="测试点云（中心偏移）"/>
                         <Button
                             Margin="0,0,0,15"
                             Padding="8,5"
                             Background="#3C5D7D"
                             Command="{Binding TestPointCloudCenterCommand}"
-                            Content="测试点云中心计算" />
+                            Content="测试点云中心计算"/>
 
                         <TextBlock
                             Margin="0,0,0,8"
                             FontSize="12"
                             FontWeight="Bold"
                             Foreground="#4EC9B0"
-                            Text="旋转测试" />
+                            Text="旋转测试"/>
                         <Button
                             x:Name="TestRotationButton"
                             Margin="0,0,0,15"
                             Padding="8,5"
                             Background="#7D3C3C"
                             Click="TestRotationCenter_Click"
-                            Content="旋转中心测试说明" />
+                            Content="旋转中心测试说明"/>
 
                         <TextBlock
                             Margin="0,0,0,8"
                             FontSize="12"
                             FontWeight="Bold"
                             Foreground="#4EC9B0"
-                            Text="可见性测试" />
+                            Text="可见性测试"/>
                         <Button
                             Margin="0,0,0,15"
                             Padding="8,5"
                             Background="#5C3C7D"
                             Click="TestVisibilityToggle_Click"
-                            Content="测试 Visibility 切换" />
+                            Content="测试 Visibility 切换"/>
 
                         <TextBlock
                             Margin="0,0,0,8"
                             FontSize="12"
                             FontWeight="Bold"
                             Foreground="#4EC9B0"
-                            Text="ROI 测试" />
+                            Text="ROI 测试"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#6C4C2D"
                             Click="LoadBoxRoi_Click"
-                            Content="加载 ROI（立方体）" />
+                            Content="加载 ROI（立方体）"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#6C4C2D"
                             Click="LoadSphereRoi_Click"
-                            Content="加载 ROI（球）" />
+                            Content="加载 ROI（球）"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#6C4C2D"
                             Click="LoadCylinderRoi_Click"
-                            Content="加载 ROI（圆柱）" />
+                            Content="加载 ROI（圆柱）"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#6C4C2D"
                             Click="LoadConeRoi_Click"
-                            Content="加载 ROI（圆锥）" />
+                            Content="加载 ROI（圆锥）"/>
                         <Button
                             Margin="0,0,0,8"
                             Padding="8,5"
                             Background="#7A5A28"
                             Click="LoadMultiRoi_Click"
-                            Content="加载 ROI（多对象）" />
+                            Content="加载 ROI（多对象）"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#3C7D7D"
                             Click="RunActiveRoiFilter_Click"
-                            Content="执行 ROI 筛选" />
+                            Content="执行 ROI 筛选"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#3C7D7D"
                             Click="RunActiveRoiStatistics_Click"
-                            Content="执行 ROI 统计" />
+                            Content="执行 ROI 统计"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#3C7D3C"
                             Click="RunActiveRoiCropKeep_Click"
-                            Content="裁剪：保留 ROI 内点" />
+                            Content="裁剪：保留 ROI 内点"/>
                         <Button
                             Margin="0,0,0,15"
                             Padding="8,5"
                             Background="#7D3C3C"
                             Click="RunActiveRoiCropRemove_Click"
-                            Content="裁剪：剔除 ROI 内点" />
+                            Content="裁剪：剔除 ROI 内点"/>
 
                         <TextBlock
                             Margin="0,0,0,8"
                             FontSize="12"
                             FontWeight="Bold"
                             Foreground="#4EC9B0"
-                            Text="性能测试（大规模点云）" />
+                            Text="性能测试（大规模点云）"/>
                         <Button
                             Margin="0,0,0,5"
                             Padding="8,5"
                             Background="#7D4C00"
                             Command="{Binding GenerateLargePointCloudForPerformanceTestCommand}"
                             Content="加载 5000 万点"
-                            FontWeight="Bold" />
+                            FontWeight="Bold"/>
                         <TextBlock
                             Margin="0,0,0,15"
                             FontSize="10"
                             Foreground="#FFAA00"
                             TextWrapping="Wrap">
-                            <Run Text="⚠️ 耗时 30-60 秒生成 5000 万点。" />
-                            <LineBreak />
-                            <Run Text="生成后自动抽稀到最大 200 万点显示。" />
+                            <Run Text="⚠️ 耗时 30-60 秒生成 5000 万点。"/>
+                            <LineBreak/>
+                            <Run Text="生成后自动抽稀到最大 200 万点显示。"/>
                         </TextBlock>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
             <TabItem Header="帮助">
-                <ScrollViewer Padding="10" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Padding="10"
+                              VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <TextBlock
                             Margin="0,0,0,8"
                             FontSize="12"
                             FontWeight="Bold"
                             Foreground="#4EC9B0"
-                            Text="操作说明" />
+                            Text="操作说明"/>
                         <Border
                             Margin="0,0,0,15"
                             Padding="10"
@@ -373,15 +379,15 @@
                                 Foreground="#AAAAAA"
                                 LineHeight="20"
                                 TextWrapping="Wrap">
-                                <Run Text="📍 鼠标交互：" /><LineBreak />
-                                <Run Text="• 左键拖拽：命中 ROI 时编辑，否则旋转视图" /><LineBreak />
-                                <Run Text="• 右键拖拽：平移视图" /><LineBreak />
-                                <Run Text="• 滚轮：缩放视图" /><LineBreak />
-                                <LineBreak />
-                                <Run Text="🎨 功能概览：" /><LineBreak />
-                                <Run Text="• 数据选项卡：加载和管理点云数据" /><LineBreak />
-                                <Run Text="• 视图选项卡：调整显示和渲染对象" /><LineBreak />
-                                <Run Text="• 测试选项卡：验证各项功能与 ROI 筛选/统计/裁剪" /><LineBreak />
+                                <Run Text="📍 鼠标交互："/><LineBreak/>
+                                <Run Text="• 左键单击：选择 ROI；点空白处可取消 ROI 选择；左键拖拽：旋转视图"/><LineBreak/>
+                                <Run Text="• 右键拖拽：平移视图"/><LineBreak/>
+                                <Run Text="• 滚轮：缩放视图"/><LineBreak/>
+                                <LineBreak/>
+                                <Run Text="🎨 功能概览："/><LineBreak/>
+                                <Run Text="• 数据选项卡：加载和管理点云数据"/><LineBreak/>
+                                <Run Text="• 视图选项卡：调整显示和渲染对象"/><LineBreak/>
+                                <Run Text="• 测试选项卡：验证各项功能与 ROI 筛选/统计/裁剪"/><LineBreak/>
                             </TextBlock>
                         </Border>
 
@@ -391,7 +397,7 @@
                             FontSize="10"
                             Foreground="#4EC9B0"
                             Text="{Binding StatusMessage}"
-                            TextWrapping="Wrap" />
+                            TextWrapping="Wrap"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

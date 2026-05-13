@@ -14,7 +14,7 @@ namespace CloudView
         public MainWindow()
         {
             InitializeComponent();
-            
+
             // 订阅 ROI 选择事件
             PointCloudViewer.RoiSelected += OnRoiSelected;
         }
@@ -63,7 +63,7 @@ namespace CloudView
                 sb.AppendLine("- 摄像机目标点(_cameraTarget)应设置为点云中心");
                 sb.AppendLine("- 摄像机位置应围绕目标点旋转");
                 sb.AppendLine("- 旋转角度存储在 _rotationX 和 _rotationY 中");
-                
+
                 vm.StatusMessage = sb.ToString();
             }
             else
@@ -83,7 +83,7 @@ namespace CloudView
             {
                 // 执行命令生成点云
                 vm.TestRangeFilterCommand.Execute(null);
-                
+
                 // 设置坐标范围限制：仅显示上半部分
                 // 点云范围: X[10,20], Y[5,15], Z[-5,5]
                 // 限制范围: X[10,20], Y[10,15], Z[-5,5]
@@ -103,7 +103,7 @@ namespace CloudView
             {
                 // 执行命令生成点云
                 vm.TestRangeFilter2Command.Execute(null);
-                
+
                 // 设置坐标范围限制：仅显示中心立方体部分
                 // 点云范围: X[10,20], Y[5,15], Z[-5,5]
                 // 限制范围: X[12,18], Y[7,13], Z[-3,3]
@@ -123,7 +123,7 @@ namespace CloudView
             {
                 // 执行命令显示状态
                 vm.ResetRangeFilterCommand.Execute(null);
-                
+
                 // 重置坐标范围限制到无限制
                 PointCloudViewer.MinX = float.MinValue;
                 PointCloudViewer.MaxX = float.MaxValue;
@@ -147,7 +147,7 @@ namespace CloudView
             sb.AppendLine("🧪 Visibility 切换测试启动");
             sb.AppendLine("");
             sb.AppendLine("步骤 1: 隐藏 PointCloudViewer (Visibility.Collapsed)");
-            
+
             vm.StatusMessage = sb.ToString();
 
             // 隐藏点云查看器
@@ -157,7 +157,7 @@ namespace CloudView
             var timer = new System.Windows.Threading.DispatcherTimer();
             timer.Interval = TimeSpan.FromSeconds(1);
             int step = 1;
-            
+
             timer.Tick += (s, args) =>
             {
                 step++;
@@ -595,7 +595,8 @@ namespace CloudView
                 drawFill: true,
                 drawOutline: true,
                 lineWidth: 2.0f
-            ) { Name = "Pyramid" };
+            )
+            { Name = "Pyramid" };
 
             PointCloudViewer.Shapes = new List<BaseSharp> { pyramid };
         }
@@ -624,7 +625,8 @@ namespace CloudView
                 slices: 20,
                 drawFill: true,
                 drawOutline: false
-            ) { Name = "Sphere" };
+            )
+            { Name = "Sphere" };
 
             PointCloudViewer.Shapes = new List<BaseSharp> { sphere };
         }
@@ -655,7 +657,8 @@ namespace CloudView
                 drawFill: true,
                 drawOutline: false,
                 includeCaps: true
-            ) { Name = "Cylinder" };
+            )
+            { Name = "Cylinder" };
 
             PointCloudViewer.Shapes = new List<BaseSharp> { cylinder };
         }
@@ -679,7 +682,7 @@ namespace CloudView
                 }
             };
 
-            vm.StatusMessage = "✅ 已加载立方体 ROI\n左键命中 ROI 时可编辑，点空白处可旋转视图\n右键平移，滚轮缩放";
+            vm.StatusMessage = "✅ 已加载立方体 ROI\n左键单击可选择 ROI，点空白处可取消选择\n左键拖动可旋转视图\n选中后可拖动控制点或本体进行编辑\n右键平移，滚轮缩放";
         }
 
         private void LoadSphereRoi_Click(object sender, RoutedEventArgs e)
@@ -701,7 +704,7 @@ namespace CloudView
                 }
             };
 
-            vm.StatusMessage = "✅ 已加载球体 ROI\n可拖动半径控制点调整大小，并支持整体移动与旋转";
+            vm.StatusMessage = "✅ 已加载球体 ROI\n请先左键单击选中 ROI，点空白处可取消选择\n选中后可拖动半径控制点调整大小，并支持整体移动与旋转";
         }
 
         private void LoadCylinderRoi_Click(object sender, RoutedEventArgs e)
@@ -724,7 +727,7 @@ namespace CloudView
                 }
             };
 
-            vm.StatusMessage = "✅ 已加载圆柱 ROI\n可拖动半径 / 高度控制点，并支持旋转姿态";
+            vm.StatusMessage = "✅ 已加载圆柱 ROI\n请先左键单击选中 ROI，点空白处可取消选择\n选中后可拖动半径 / 高度控制点，并支持旋转姿态";
         }
 
         private void LoadConeRoi_Click(object sender, RoutedEventArgs e)
@@ -747,7 +750,7 @@ namespace CloudView
                 }
             };
 
-            vm.StatusMessage = "✅ 已加载圆锥 ROI\n支持底半径、高度与整体姿态编辑";
+            vm.StatusMessage = "✅ 已加载圆锥 ROI\n请先左键单击选中 ROI，点空白处可取消选择\n选中后支持底半径、高度与整体姿态编辑";
         }
 
         private void LoadMultiRoi_Click(object sender, RoutedEventArgs e)
@@ -792,7 +795,7 @@ namespace CloudView
                 }
             };
 
-            vm.StatusMessage = "✅ 已加载多 ROI 测试集合\n左键点击任意 ROI 可切换活动对象，并对活动 ROI 进行编辑";
+            vm.StatusMessage = "✅ 已加载多 ROI 测试集合\n左键单击任意 ROI 可切换活动对象\n点空白处可取消当前活动 ROI\n选中的 ROI 会加粗显示，随后可对其进行编辑";
         }
 
         private void RunActiveRoiFilter_Click(object sender, RoutedEventArgs e)

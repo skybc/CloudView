@@ -12,15 +12,8 @@ public partial class PointCloudViewer
     private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         var currentPos = e.GetPosition(this);
-        if (TryBeginRoiInteraction(currentPos))
-        {
-            e.Handled = true;
-            return;
-        }
-
-        _isRotating = true;
-        _lastMousePosition = currentPos;
-        CaptureMouse();
+        TryBeginRoiInteraction(currentPos);
+        e.Handled = true;
     }
 
     private void OnMouseMove(object sender, MouseEventArgs e)
@@ -43,6 +36,8 @@ public partial class PointCloudViewer
             _lastMousePosition = currentPos;
             return;
         }
+
+        TryPromotePendingLeftGestureToAction(currentPos);
 
         if (_isRotating)
         {
@@ -120,7 +115,7 @@ public partial class PointCloudViewer
 
     private void SyncRotationFromCameraOffset()
     {
-         var direction = _cameraPosition - _cameraTarget;
+        var direction = _cameraPosition - _cameraTarget;
         float distance = direction.Length();
         const float orbitPitchLimit = 1.5533431f; // 89°，避免 pitch 反推后落在极点外
 
@@ -150,11 +145,16 @@ public partial class PointCloudViewer
             return;
         }
 
+        CompletePendingLeftGestureSelection();
+
         if (_isRotating)
         {
             _isRotating = false;
-            ReleaseMouseCapture();
         }
+
+        ClearPendingLeftGestureState();
+        ReleaseMouseCapture();
+        e.Handled = true;
     }
 
     private void OnMouseRightButtonDown(object sender, MouseButtonEventArgs e)

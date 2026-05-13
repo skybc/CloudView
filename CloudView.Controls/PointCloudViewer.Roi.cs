@@ -105,7 +105,7 @@ public partial class PointCloudViewer
             return;
         }
 
-        SetActiveRoi(Rois?.FirstOrDefault(r => r.IsVisible));
+        SetActiveRoi(null);
     }
 
     private void SetActiveRoi(RoiBase? roi)
@@ -241,13 +241,30 @@ public partial class PointCloudViewer
             return;
         }
 
-        _gl.Enable(EnableCap.Blend);
-        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-        _gl.Disable(EnableCap.DepthTest);
-
         for (int i = 0; i < _roiRenderItems.Count; i++)
         {
             var item = _roiRenderItems[i];
+
+            bool isLinePrimitive = item.PrimitiveType == PrimitiveType.LineStrip || item.PrimitiveType == PrimitiveType.Lines;
+            if (isLinePrimitive)
+            {
+                _gl.Disable(EnableCap.DepthTest);
+            }
+            else
+            {
+                _gl.Enable(EnableCap.DepthTest);
+            }
+
+            if (item.EnableBlend)
+            {
+                _gl.Enable(EnableCap.Blend);
+                _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            }
+            else
+            {
+                _gl.Disable(EnableCap.Blend);
+            }
+
             _gl.LineWidth(item.LineWidth);
             _gl.BindVertexArray(item.Vao);
             _gl.DrawArrays(item.PrimitiveType, 0, (uint)item.VertexCount);
@@ -264,7 +281,7 @@ public partial class PointCloudViewer
         Color baseColor = ReferenceEquals(roi, _activeRoi)
             ? Brighten(roi.Color, 28)
             : ApplyAlpha(roi.Color, 210);
-        float lineWidth = ReferenceEquals(roi, _activeRoi) ? 2.4f : 1.6f;
+        float lineWidth = ReferenceEquals(roi, _activeRoi) ? 3.6f : 1.6f;
 
         switch (roi)
         {
@@ -285,22 +302,21 @@ public partial class PointCloudViewer
 
     private void AddRoiEditVisuals(RoiBase roi)
     {
-        Color handleColor = Colors.Gold;
-        float handleLineWidth = 2.0f;
+        float handleLineWidth = 2.2f;
 
         switch (roi)
         {
             case BoxRoi box:
-                BuildBoxVisuals(box, handleColor, handleLineWidth, includeHandles: true);
+                BuildBoxVisuals(box, Colors.Gold, handleLineWidth, includeHandles: true);
                 break;
             case SphereRoi sphere:
-                BuildSphereVisuals(sphere, handleColor, handleLineWidth, includeHandles: true);
+                BuildSphereVisuals(sphere, Colors.Gold, handleLineWidth, includeHandles: true);
                 break;
             case CylinderRoi cylinder:
-                BuildCylinderVisuals(cylinder, handleColor, handleLineWidth, includeHandles: true);
+                BuildCylinderVisuals(cylinder, Colors.Gold, handleLineWidth, includeHandles: true);
                 break;
             case ConeRoi cone:
-                BuildConeVisuals(cone, handleColor, handleLineWidth, includeHandles: true);
+                BuildConeVisuals(cone, Colors.Gold, handleLineWidth, includeHandles: true);
                 break;
         }
 
@@ -422,31 +438,43 @@ public partial class PointCloudViewer
     private void AddRotationVisuals(RoiBase roi)
     {
         float radius = MathF.Max(roi.GetBoundingRadius() * 1.2f, GetHandleScale(roi) * 2.5f);
-        AddCircleShape(roi, Vector3.Zero, Vector3.UnitY, Vector3.UnitZ, radius, ApplyAlpha(Colors.IndianRed, 210), 1.5f);
-        AddCircleShape(roi, Vector3.Zero, Vector3.UnitX, Vector3.UnitZ, radius, ApplyAlpha(Colors.LightGreen, 210), 1.5f);
-        AddCircleShape(roi, Vector3.Zero, Vector3.UnitX, Vector3.UnitY, radius, ApplyAlpha(Colors.SkyBlue, 210), 1.5f);
+        bool highlightX = IsHandleEmphasized(roi, RoiHandleKind.RotateX);
+        bool highlightY = IsHandleEmphasized(roi, RoiHandleKind.RotateY);
+        bool highlightZ = IsHandleEmphasized(roi, RoiHandleKind.RotateZ);
 
-        AddRotationHandle(roi, RoiHandleKind.RotateX, new Vector3(0, radius, 0), Colors.IndianRed);
-        AddRotationHandle(roi, RoiHandleKind.RotateY, new Vector3(radius, 0, 0), Colors.LightGreen);
-        AddRotationHandle(roi, RoiHandleKind.RotateZ, new Vector3(radius, 0, 0), Colors.SkyBlue);
+        AddCircleShape(roi, Vector3.Zero, Vector3.UnitY, Vector3.UnitZ, radius, GetRingColor(Colors.IndianRed, highlightX), highlightX ? 2.8f : 1.5f, addSegments: false);
+        AddCircleShape(roi, Vector3.Zero, Vector3.UnitX, Vector3.UnitZ, radius, GetRingColor(Colors.LightGreen, highlightY), highlightY ? 2.8f : 1.5f, addSegments: false);
+        AddCircleShape(roi, Vector3.Zero, Vector3.UnitX, Vector3.UnitY, radius, GetRingColor(Colors.SkyBlue, highlightZ), highlightZ ? 2.8f : 1.5f, addSegments: false);
+
+        AddRotationHandle(roi, RoiHandleKind.RotateX, Vector3.UnitY, Vector3.UnitZ, radius, Colors.IndianRed);
+        AddRotationHandle(roi, RoiHandleKind.RotateY, Vector3.UnitX, Vector3.UnitZ, radius, Colors.LightGreen);
+        AddRotationHandle(roi, RoiHandleKind.RotateZ, Vector3.UnitX, Vector3.UnitY, radius, Colors.SkyBlue);
     }
 
     private void AddResizeHandle(RoiBase roi, RoiHandleKind kind, Vector3 localPosition, Color color)
     {
+        bool emphasized = IsHandleEmphasized(roi, kind);
+        float scaleMultiplier = emphasized ? 1.35f : 1.0f;
+        Color accentColor = GetHandleAccentColor(kind, color);
+        Color fillColor = GetHandleFillColor(accentColor, emphasized);
+        Vector3 localAxis = Vector3.Normalize(localPosition == Vector3.Zero ? Vector3.UnitX : localPosition);
         Vector3 worldPosition = roi.LocalToWorld(localPosition);
+        Vector3 worldDirection = SafeNormalize(roi.LocalAxisToWorld(localAxis), Vector3.UnitX);
+        Vector3 hitPosition = AddDirectionalArrowGlyph(roi, worldPosition, worldDirection, fillColor, scaleMultiplier);
+
         _roiHandleVisuals.Add(new RoiHandleVisual
         {
             Roi = roi,
             Kind = kind,
-            Position = worldPosition,
-            LocalAxis = Vector3.Normalize(localPosition == Vector3.Zero ? Vector3.UnitX : localPosition),
+            Position = hitPosition,
+            LocalAxis = localAxis,
         });
-
-        AddHandleMarker(worldPosition, ApplyAlpha(color, 255), roi);
     }
 
-    private void AddRotationHandle(RoiBase roi, RoiHandleKind kind, Vector3 localPosition, Color color)
+    private void AddRotationHandle(RoiBase roi, RoiHandleKind kind, Vector3 localAxisX, Vector3 localAxisY, float radius, Color color)
     {
+        bool emphasized = IsHandleEmphasized(roi, kind);
+        float scaleMultiplier = emphasized ? 1.35f : 1.0f;
         Vector3 axis = kind switch
         {
             RoiHandleKind.RotateX => Vector3.UnitX,
@@ -454,7 +482,8 @@ public partial class PointCloudViewer
             _ => Vector3.UnitZ,
         };
 
-        Vector3 worldPosition = roi.LocalToWorld(localPosition);
+        Color fillColor = GetHandleFillColor(color, emphasized);
+        Vector3 worldPosition = AddRingArrowGlyph(roi, localAxisX, localAxisY, radius, fillColor, scaleMultiplier);
         _roiHandleVisuals.Add(new RoiHandleVisual
         {
             Roi = roi,
@@ -462,22 +491,151 @@ public partial class PointCloudViewer
             Position = worldPosition,
             LocalAxis = axis,
         });
-
-        AddHandleMarker(worldPosition, ApplyAlpha(color, 255), roi);
     }
 
-    private void AddHandleMarker(Vector3 worldPosition, Color color, RoiBase roi)
+    private Vector3 AddDirectionalArrowGlyph(RoiBase roi, Vector3 worldAnchor, Vector3 worldDirection, Color fillColor, float scaleMultiplier)
     {
-        float scale = GetHandleScale(roi);
-        AddLineShape(worldPosition + new Vector3(-scale, 0, 0), worldPosition + new Vector3(scale, 0, 0), color, 2.2f, roi, addSegments: false);
-        AddLineShape(worldPosition + new Vector3(0, -scale, 0), worldPosition + new Vector3(0, scale, 0), color, 2.2f, roi, addSegments: false);
-        AddLineShape(worldPosition + new Vector3(0, 0, -scale), worldPosition + new Vector3(0, 0, scale), color, 2.2f, roi, addSegments: false);
+        float scale = GetHandleScale(roi) * scaleMultiplier;
+        Vector3 axis = SafeNormalize(worldDirection, Vector3.UnitX);
+        CreatePerpendicularBasis(axis, out var sideA, out var sideB);
+
+        float baseOffset = scale * 0.35f;
+        float shaftLength = scale * 1.2f;
+        float shaftRadius = scale * 0.14f;
+        float coneLength = scale * 0.92f;
+        float coneRadius = scale * 0.36f;
+
+        Vector3 cylinderStartCenter = worldAnchor + axis * baseOffset;
+        Vector3 cylinderEndCenter = cylinderStartCenter + axis * shaftLength;
+        Vector3 tip = cylinderEndCenter + axis * coneLength;
+
+        AddSolidCylinderShape(roi, cylinderStartCenter, cylinderEndCenter, shaftRadius, fillColor, 28);
+        AddSolidConeShape(roi, cylinderEndCenter, tip, coneRadius, fillColor, 28);
+
+        return cylinderEndCenter + axis * (coneLength * 0.55f);
     }
 
-    private void AddCircleShape(RoiBase roi, Vector3 localCenter, Vector3 localAxisX, Vector3 localAxisY, float radius, Color color, float lineWidth)
+    private Vector3 AddRingArrowGlyph(RoiBase roi, Vector3 localAxisX, Vector3 localAxisY, float radius, Color fillColor, float scaleMultiplier)
     {
-        var points = CreateCirclePoints(roi, localCenter, localAxisX, localAxisY, radius, 40);
-        AddPolylineShape(points, color, lineWidth, true, roi, addSegments: true);
+        const float markerAngle = 0.68f;
+
+        Vector3 radialLocal = Vector3.Normalize((MathF.Cos(markerAngle) * localAxisX) + (MathF.Sin(markerAngle) * localAxisY));
+        Vector3 tangentLocal = Vector3.Normalize((-MathF.Sin(markerAngle) * localAxisX) + (MathF.Cos(markerAngle) * localAxisY));
+        Vector3 planeNormalLocal = SafeNormalize(Vector3.Cross(localAxisX, localAxisY), Vector3.UnitZ);
+
+        Vector3 markerCenter = roi.LocalToWorld(radialLocal * radius);
+        Vector3 tangentWorld = SafeNormalize(roi.LocalAxisToWorld(tangentLocal), Vector3.UnitX);
+        Vector3 radialWorld = SafeNormalize(roi.LocalAxisToWorld(radialLocal), Vector3.UnitY);
+        Vector3 planeNormalWorld = SafeNormalize(roi.LocalAxisToWorld(planeNormalLocal), Vector3.UnitZ);
+
+        float scale = GetHandleScale(roi) * scaleMultiplier;
+        float shaftHalfLength = scale * 0.52f;
+        float shaftRadius = scale * 0.13f;
+        float coneLength = scale * 0.45f;
+        float coneRadius = scale * 0.30f;
+
+        Vector3 cylinderStartCenter = markerCenter - tangentWorld * shaftHalfLength;
+        Vector3 cylinderEndCenter = markerCenter + tangentWorld * shaftHalfLength;
+        Vector3 leftTip = cylinderStartCenter - tangentWorld * coneLength;
+        Vector3 rightTip = cylinderEndCenter + tangentWorld * coneLength;
+
+        AddSolidCylinderShape(roi, cylinderStartCenter, cylinderEndCenter, shaftRadius, fillColor, 24);
+        AddSolidConeShape(roi, cylinderStartCenter, leftTip, coneRadius, fillColor, 24);
+        AddSolidConeShape(roi, cylinderEndCenter, rightTip, coneRadius, fillColor, 24);
+
+        return markerCenter;
+    }
+
+    private void AddSolidCylinderShape(RoiBase roi, Vector3 startCenter, Vector3 endCenter, float radius, Color color, int segments)
+    {
+        CreatePerpendicularBasis(SafeNormalize(endCenter - startCenter, Vector3.UnitY), out var sideA, out var sideB);
+        var startRing = CreateWorldCirclePoints(startCenter, sideA, sideB, radius, segments);
+        var endRing = CreateWorldCirclePoints(endCenter, sideA, sideB, radius, segments);
+
+        var vertices = new List<Vector3>();
+        var indices = new List<uint>();
+
+        uint startCenterIndex = (uint)vertices.Count;
+        vertices.Add(startCenter);
+        uint endCenterIndex = (uint)vertices.Count;
+        vertices.Add(endCenter);
+
+        uint startRingIndex = (uint)vertices.Count;
+        vertices.AddRange(startRing);
+        uint endRingIndex = (uint)vertices.Count;
+        vertices.AddRange(endRing);
+
+        for (int i = 0; i < segments; i++)
+        {
+            uint currentStart = startRingIndex + (uint)i;
+            uint nextStart = startRingIndex + (uint)((i + 1) % segments);
+            uint currentEnd = endRingIndex + (uint)i;
+            uint nextEnd = endRingIndex + (uint)((i + 1) % segments);
+
+            indices.Add(currentStart);
+            indices.Add(currentEnd);
+            indices.Add(nextStart);
+
+            indices.Add(nextStart);
+            indices.Add(currentEnd);
+            indices.Add(nextEnd);
+
+            indices.Add(startCenterIndex);
+            indices.Add(nextStart);
+            indices.Add(currentStart);
+
+            indices.Add(endCenterIndex);
+            indices.Add(currentEnd);
+            indices.Add(nextEnd);
+        }
+
+        AddVolumeShape(vertices, indices, color, roi);
+    }
+
+    private void AddSolidConeShape(RoiBase roi, Vector3 baseCenter, Vector3 tip, float baseRadius, Color color, int segments)
+    {
+        CreatePerpendicularBasis(SafeNormalize(tip - baseCenter, Vector3.UnitY), out var sideA, out var sideB);
+        var baseRing = CreateWorldCirclePoints(baseCenter, sideA, sideB, baseRadius, segments);
+
+        var vertices = new List<Vector3>();
+        var indices = new List<uint>();
+
+        uint tipIndex = (uint)vertices.Count;
+        vertices.Add(tip);
+        uint baseCenterIndex = (uint)vertices.Count;
+        vertices.Add(baseCenter);
+        uint baseRingIndex = (uint)vertices.Count;
+        vertices.AddRange(baseRing);
+
+        for (int i = 0; i < segments; i++)
+        {
+            uint current = baseRingIndex + (uint)i;
+            uint next = baseRingIndex + (uint)((i + 1) % segments);
+
+            indices.Add(tipIndex);
+            indices.Add(current);
+            indices.Add(next);
+
+            indices.Add(baseCenterIndex);
+            indices.Add(next);
+            indices.Add(current);
+        }
+
+        AddVolumeShape(vertices, indices, color, roi);
+    }
+
+    private void AddVolumeShape(IEnumerable<Vector3> vertices, IEnumerable<uint> indices, Color color, RoiBase roi)
+    {
+        _roiVisualShapes.Add(new VolumeSharp(vertices, indices, color, drawFill: true, drawOutline: false, lineWidth: 1.0f)
+        {
+            Name = $"{roi.Name}-{roi.Kind}-Volume"
+        });
+    }
+
+    private void AddCircleShape(RoiBase roi, Vector3 localCenter, Vector3 localAxisX, Vector3 localAxisY, float radius, Color color, float lineWidth, bool addSegments = true)
+    {
+        var points = CreateCirclePoints(roi, localCenter, localAxisX, localAxisY, radius, 96);
+        AddPolylineShape(points, color, lineWidth, true, roi, addSegments);
     }
 
     private Vector3[] CreateCirclePoints(RoiBase roi, Vector3 localCenter, Vector3 localAxisX, Vector3 localAxisY, float radius, int segments)
@@ -491,6 +649,42 @@ public partial class PointCloudViewer
         }
 
         return points;
+    }
+
+    private Vector3[] CreateArcPoints(RoiBase roi, Vector3 localCenter, Vector3 localAxisX, Vector3 localAxisY, float radius, int segments, float startAngle, float endAngle)
+    {
+        var points = new Vector3[segments];
+        for (int i = 0; i < segments; i++)
+        {
+            float t = segments == 1 ? 0f : i / (float)(segments - 1);
+            float angle = startAngle + ((endAngle - startAngle) * t);
+            Vector3 local = localCenter + localAxisX * (MathF.Cos(angle) * radius) + localAxisY * (MathF.Sin(angle) * radius);
+            points[i] = roi.LocalToWorld(local);
+        }
+
+        return points;
+    }
+
+    private static Vector3[] CreateWorldCirclePoints(Vector3 center, Vector3 axisX, Vector3 axisY, float radius, int segments)
+    {
+        var points = new Vector3[segments];
+        for (int i = 0; i < segments; i++)
+        {
+            float angle = MathF.PI * 2f * i / segments;
+            points[i] = center + (axisX * (MathF.Cos(angle) * radius)) + (axisY * (MathF.Sin(angle) * radius));
+        }
+
+        return points;
+    }
+
+    private bool IsHandleEmphasized(RoiBase roi, RoiHandleKind kind)
+    {
+        return IsSameHandle(_activeRoiHandle, roi, kind) || IsSameHandle(_pendingHandle, roi, kind);
+    }
+
+    private static bool IsSameHandle(RoiHandleVisual? handle, RoiBase roi, RoiHandleKind kind)
+    {
+        return handle != null && ReferenceEquals(handle.Roi, roi) && handle.Kind == kind;
     }
 
     private void AddPolylineShape(IEnumerable<Vector3> vertices, Color color, float lineWidth, bool isClosed, RoiBase roi, bool addSegments)
@@ -539,6 +733,43 @@ public partial class PointCloudViewer
     {
         float distance = Vector3.Distance(_cameraPosition, roi.Center);
         return MathF.Max(0.03f, distance * 0.03f);
+    }
+
+    private static Color GetHandleAccentColor(RoiHandleKind kind, Color fallback)
+    {
+        return kind switch
+        {
+            RoiHandleKind.PositiveX or RoiHandleKind.NegativeX or RoiHandleKind.RotateX => Color.FromRgb(255, 122, 89),
+            RoiHandleKind.PositiveY or RoiHandleKind.NegativeY or RoiHandleKind.RotateY => Color.FromRgb(87, 232, 154),
+            RoiHandleKind.PositiveZ or RoiHandleKind.NegativeZ or RoiHandleKind.RotateZ => Color.FromRgb(88, 200, 255),
+            _ => fallback,
+        };
+    }
+
+    private static Color GetHandleFillColor(Color baseColor, bool emphasized)
+    {
+        return emphasized
+            ? Color.FromArgb(255, Brighten(baseColor, 40).R, Brighten(baseColor, 40).G, Brighten(baseColor, 40).B)
+            : Color.FromArgb(255, baseColor.R, baseColor.G, baseColor.B);
+    }
+
+    private static Color GetRingColor(Color baseColor, bool emphasized)
+    {
+        return emphasized
+            ? Color.FromArgb(255, Brighten(baseColor, 55).R, Brighten(baseColor, 55).G, Brighten(baseColor, 55).B)
+            : Color.FromArgb(255, baseColor.R, baseColor.G, baseColor.B);
+    }
+
+    private static Vector3 SafeNormalize(Vector3 vector, Vector3 fallback)
+    {
+        return vector.LengthSquared() <= 1e-6f ? fallback : Vector3.Normalize(vector);
+    }
+
+    private static void CreatePerpendicularBasis(Vector3 axis, out Vector3 sideA, out Vector3 sideB)
+    {
+        Vector3 reference = MathF.Abs(Vector3.Dot(axis, Vector3.UnitY)) > 0.92f ? Vector3.UnitX : Vector3.UnitY;
+        sideA = SafeNormalize(Vector3.Cross(axis, reference), Vector3.UnitZ);
+        sideB = SafeNormalize(Vector3.Cross(axis, sideA), Vector3.UnitX);
     }
 
     private static Color ApplyAlpha(Color color, byte alpha)
@@ -615,41 +846,148 @@ public partial class PointCloudViewer
 
     private partial bool TryBeginRoiInteraction(Point position)
     {
-        if (Rois == null || Rois.Count == 0)
+        ClearPendingLeftGestureState();
+
+        _isLeftGesturePending = true;
+        _leftGestureMoved = false;
+        _leftGestureStartPoint = position;
+        _lastMousePosition = position;
+
+        if (Rois != null && Rois.Count > 0)
+        {
+            if (_activeRoi != null && TryFindHandle(position, out var handle))
+            {
+                _pendingHandle = handle;
+                _roiNeedsRebuild = true;
+                _needsRender = true;
+                CaptureMouse();
+                return true;
+            }
+
+            if (TryFindBody(position, out var roi))
+            {
+                if (ReferenceEquals(roi, _activeRoi))
+                {
+                    _pendingMoveRoi = roi;
+                }
+                else
+                {
+                    _pendingSelectionRoi = roi;
+                }
+
+                CaptureMouse();
+                return true;
+            }
+        }
+
+        CaptureMouse();
+        return false;
+    }
+
+    private partial bool TryPromotePendingLeftGestureToAction(Point currentPosition)
+    {
+        if (!_isLeftGesturePending)
         {
             return false;
         }
 
-        if (TryFindHandle(position, out var handle))
+        if (_leftGestureMoved)
         {
-            SetActiveRoi(handle.Roi);
-            _activeRoiHandle = handle;
-            _roiInteractionMode = IsRotationHandle(handle.Kind) ? RoiInteractionMode.Rotate : RoiInteractionMode.Resize;
-            _lastInteractionScreenPoint = position;
-            _lastMousePosition = position;
+            return _roiInteractionMode != RoiInteractionMode.None || _isRotating;
+        }
 
-            if (_roiInteractionMode == RoiInteractionMode.Resize)
-            {
-                BeginPlaneInteraction(handle.Position, position);
-            }
+        if ((currentPosition - _leftGestureStartPoint).Length < RoiClickMoveThreshold)
+        {
+            return false;
+        }
 
-            CaptureMouse();
+        _leftGestureMoved = true;
+
+        if (_pendingHandle != null)
+        {
+            BeginHandleInteraction(_pendingHandle, currentPosition);
             return true;
         }
 
-        if (TryFindBody(position, out var roi))
+        if (_pendingMoveRoi != null)
         {
-            SetActiveRoi(roi);
-            _activeRoiHandle = null;
-            _roiInteractionMode = RoiInteractionMode.Move;
-            _lastInteractionScreenPoint = position;
-            _lastMousePosition = position;
-            BeginPlaneInteraction(roi.Center, position);
-            CaptureMouse();
+            BeginMoveInteraction(_pendingMoveRoi, currentPosition);
             return true;
         }
 
-        return false;
+        BeginViewRotation(currentPosition);
+        return true;
+    }
+
+    private partial void CompletePendingLeftGestureSelection()
+    {
+        if (!_isLeftGesturePending || _leftGestureMoved)
+        {
+            return;
+        }
+
+        if (_pendingSelectionRoi != null)
+        {
+            SetActiveRoi(_pendingSelectionRoi);
+            return;
+        }
+
+        if (_pendingMoveRoi == null && _pendingHandle == null)
+        {
+            SetActiveRoi(null);
+        }
+    }
+
+    private void BeginHandleInteraction(RoiHandleVisual handle, Point position)
+    {
+        SetActiveRoi(handle.Roi);
+        _activeRoiHandle = handle;
+        _roiInteractionMode = IsRotationHandle(handle.Kind) ? RoiInteractionMode.Rotate : RoiInteractionMode.Resize;
+        _lastInteractionScreenPoint = position;
+        _lastMousePosition = position;
+
+        if (_roiInteractionMode == RoiInteractionMode.Resize)
+        {
+            BeginPlaneInteraction(handle.Position, position);
+        }
+
+        _isLeftGesturePending = false;
+        _roiNeedsRebuild = true;
+        _needsRender = true;
+    }
+
+    private void BeginMoveInteraction(RoiBase roi, Point position)
+    {
+        SetActiveRoi(roi);
+        _activeRoiHandle = null;
+        _roiInteractionMode = RoiInteractionMode.Move;
+        _lastInteractionScreenPoint = position;
+        _lastMousePosition = position;
+        BeginPlaneInteraction(roi.Center, position);
+        _isLeftGesturePending = false;
+    }
+
+    private void BeginViewRotation(Point position)
+    {
+        _isRotating = true;
+        _lastMousePosition = position;
+        _isLeftGesturePending = false;
+    }
+
+    private partial void ClearPendingLeftGestureState()
+    {
+        bool hadPendingHandle = _pendingHandle != null;
+        _isLeftGesturePending = false;
+        _leftGestureMoved = false;
+        _pendingSelectionRoi = null;
+        _pendingMoveRoi = null;
+        _pendingHandle = null;
+
+        if (hadPendingHandle && _roiInteractionMode == RoiInteractionMode.None)
+        {
+            _roiNeedsRebuild = true;
+            _needsRender = true;
+        }
     }
 
     private void BeginPlaneInteraction(Vector3 planePoint, Point position)
@@ -752,21 +1090,50 @@ public partial class PointCloudViewer
             return;
         }
 
-        var delta = currentPosition - _lastInteractionScreenPoint;
-        float angle = (float)(delta.X + delta.Y) * 0.01f;
-        if (MathF.Abs(angle) <= 1e-4f)
+        if (ActualWidth <= 0 || ActualHeight <= 0)
         {
             return;
         }
 
-        Vector3 axis = _activeRoiHandle.Kind switch
+        Vector3 axisLocal = _activeRoiHandle.Kind switch
         {
             RoiHandleKind.RotateX => Vector3.UnitX,
             RoiHandleKind.RotateY => Vector3.UnitY,
             _ => Vector3.UnitZ,
         };
 
-        var rotationDelta = Quaternion.CreateFromAxisAngle(axis, angle);
+        int width = (int)ActualWidth;
+        int height = (int)ActualHeight;
+        Point centerScreen = WorldToScreen(_activeRoi.Center, GetCurrentMvp(width, height), width, height);
+
+        System.Windows.Vector previousVector = _lastInteractionScreenPoint - centerScreen;
+        System.Windows.Vector currentVector = currentPosition - centerScreen;
+        if (previousVector.LengthSquared < 9 || currentVector.LengthSquared < 9)
+        {
+            _lastInteractionScreenPoint = currentPosition;
+            return;
+        }
+
+        previousVector.Normalize();
+        currentVector.Normalize();
+
+        float cross = (float)((previousVector.X * currentVector.Y) - (previousVector.Y * currentVector.X));
+        float dot = (float)((previousVector.X * currentVector.X) + (previousVector.Y * currentVector.Y));
+        float angle = MathF.Atan2(cross, dot);
+        if (MathF.Abs(angle) <= 1e-4f)
+        {
+            _lastInteractionScreenPoint = currentPosition;
+            return;
+        }
+
+        Vector3 axisWorld = SafeNormalize(_activeRoi.LocalAxisToWorld(axisLocal), axisLocal);
+        Vector3 viewDirection = SafeNormalize(_cameraPosition - _activeRoi.Center, Vector3.UnitZ);
+        if (Vector3.Dot(axisWorld, viewDirection) < 0f)
+        {
+            angle = -angle;
+        }
+
+        var rotationDelta = Quaternion.CreateFromAxisAngle(axisLocal, angle);
         _activeRoi.Rotation = Quaternion.Normalize(_activeRoi.Rotation * rotationDelta);
         _lastInteractionScreenPoint = currentPosition;
     }
@@ -876,7 +1243,7 @@ public partial class PointCloudViewer
         {
             var screen = WorldToScreen(candidate.Position, mvp, width, height);
             double distance = (screen - position).Length;
-            if (distance < 12 && distance < bestDistance)
+            if (distance < 16 && distance < bestDistance)
             {
                 bestDistance = distance;
                 best = candidate;
@@ -1013,5 +1380,8 @@ public partial class PointCloudViewer
 
         _roiInteractionMode = RoiInteractionMode.None;
         _activeRoiHandle = null;
+        ClearPendingLeftGestureState();
+        _roiNeedsRebuild = true;
+        _needsRender = true;
     }
 }
