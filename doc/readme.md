@@ -1,7 +1,7 @@
 # CloudView 文档
 
 ## 项目概述
-CloudView 是一个基于 WPF 的三维点云可视化应用程序，采用 .NET 8 构建。使用 Silk.NET 通过 OpenGL 渲染大型点数据集，支持感兴趣区域（ROI）选择、摄像机操纵，以及空间坐标系和网格显示。
+CloudView 是一个基于 WPF 的三维点云可视化应用程序，采用 .NET 8 构建。使用 Silk.NET 通过 OpenGL 渲染大型点数据集，支持多 ROI 线框编辑、基于 ROI 的点云筛选/统计/裁剪、摄像机操纵，以及空间坐标系和网格显示。
 
 ## 模块文档
 
@@ -10,8 +10,9 @@ CloudView 是一个基于 WPF 的三维点云可视化应用程序，采用 .NET
 - 三维点云渲染
 - 坐标系轴线显示
 - XY 平面网格显示
-- ROI 区域选择
-- 摄像机系统和交互（旋转、缩放、平移）
+- 多 ROI 线框显示与编辑
+- 基于 ROI 的点云筛选、统计、裁剪
+- 摄像机系统和交互（ROI 编辑、旋转、缩放、平移）
 
 ### [架构设计 (v2.0)](./modules/architecture.md)
 渲染模块的架构改进和设计模式：
@@ -19,6 +20,12 @@ CloudView 是一个基于 WPF 的三维点云可视化应用程序，采用 .NET
 - OpenGLHost 窗口托管
 - PointCloudViewer 控制逻辑
 - 模块依赖关系
+
+### [几何对象渲染系统](./modules/shapes.md)
+通用 `Shapes` 管线说明：
+- `BaseSharp` / `LineSharp` / `PanelSharp` / `VolumeSharp`
+- 球体、圆柱等静态对象渲染
+- 与可编辑 ROI 体系的职责边界
 
 ## 项目结构
 
@@ -34,6 +41,7 @@ CloudView/
 │   ├── OpenGLHost.cs       # Win32 原生窗口托管类（新增）
 │   ├── Win32Interop.cs     # Win32 API 互操作封装（新增）
 │   ├── PointCloudData.cs   # 数据结构定义
+│   ├── Roi/                # ROI 模型与结果类型
 │   └── PointCloudViewer.xaml
 │
 └── doc/                    # 文档
@@ -73,15 +81,21 @@ viewer.RoiSelected += (sender, args) =>
     var selectedPoints = args.SelectedPoints;
     // 处理选中的点
 };
+
+viewer.Rois = new List<RoiBase>
+{
+    new BoxRoi { Name = "ROI-1", Center = Vector3.Zero, Size = new Vector3(1, 1, 1) }
+};
 ```
 
 ## 关键特性
 
 ✅ **高效渲染**：使用 VAO/VBO 管理顶点数据，支持数百万个点的实时渲染  
 ✅ **空间参考**：内置坐标系轴线和 XY 平面网格  
-✅ **灵活交互**：支持旋转、缩放和区域选择  
+✅ **灵活交互**：支持 ROI 编辑、旋转、缩放和平移  
 ✅ **可扩展架构**：基于接口的设计，易于扩展新功能  
 ✅ **对象渲染**：通过 `Shapes` 集合渲染 `BaseSharp` 对象（现支持 `PanelSharp` 面片）
+✅ **ROI 业务计算**：支持基于活动 ROI 的点云筛选、统计、裁剪
 
 ## 常见问题
 

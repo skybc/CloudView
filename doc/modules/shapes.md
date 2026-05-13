@@ -3,6 +3,8 @@
 ## 概述
 从版本 2.1 起，CloudView 支持渲染任意几何对象，超越仅点云显示的限制。该系统采用**构建器模式**实现，各类型对象独立注册及渲染。
 
+> 说明：`Shapes` 体系用于静态或半静态几何显示；从 ROI 编辑功能加入后，`PointCloudViewer` 的可编辑 ROI（`Rois` 依赖属性）与 `Shapes` 分离建模。ROI 会在内部复用部分线框能力，但不建议把业务 ROI 直接塞进 `Shapes` 集合。
+
 ## 核心类型
 
 ### **BaseSharp** (基类)
@@ -45,6 +47,12 @@ public interface ISharpRenderBuilder
 BaseSharp 对象 → 选择对应 Builder → SharpGeometry（顶点+颜色数据） 
 → VAO/VBO 创建 → RenderShapes() 执行 → 屏幕显示
 ```
+
+## 与 ROI 的关系
+
+- `Shapes`：面向普通显示对象，例如面片、辅助线、示意体、静态几何。
+- `Rois`：面向可编辑业务对象，支持选中、控制点拖拽、移动、缩放、旋转，以及后续点云筛选/统计/裁剪。
+- 当前 `PointCloudViewer` 会将 ROI 线框以单独渲染路径叠加到点云之后，从而保证控制点清晰可见。
 
 **SharpGeometry 结构**：
 ```csharp

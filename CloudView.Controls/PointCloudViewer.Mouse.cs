@@ -11,8 +11,15 @@ public partial class PointCloudViewer
 
     private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        var currentPos = e.GetPosition(this);
+        if (TryBeginRoiInteraction(currentPos))
+        {
+            e.Handled = true;
+            return;
+        }
+
         _isRotating = true;
-        _lastMousePosition = e.GetPosition(this);
+        _lastMousePosition = currentPos;
         CaptureMouse();
     }
 
@@ -30,6 +37,13 @@ public partial class PointCloudViewer
             _needsRender = true;
         }
 
+        if (_roiInteractionMode != RoiInteractionMode.None)
+        {
+            UpdateRoiInteraction(currentPos);
+            _lastMousePosition = currentPos;
+            return;
+        }
+
         if (_isRotating)
         {
             var delta = currentPos - _lastMousePosition;
@@ -40,6 +54,7 @@ public partial class PointCloudViewer
             UpdateCameraPositionWithRotation();
 
             _lastMousePosition = currentPos;
+            _roiNeedsRebuild = true;
             _needsRender = true;
         }
         else if (_isPanning)
@@ -85,6 +100,7 @@ public partial class PointCloudViewer
             SyncRotationFromCameraOffset();
 
             _lastMousePosition = currentPos;
+            _roiNeedsRebuild = true;
             _needsRender = true;
         }
     }
@@ -126,6 +142,14 @@ public partial class PointCloudViewer
 
     private void OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        if (_roiInteractionMode != RoiInteractionMode.None)
+        {
+            CompleteRoiInteraction(raiseEditedEvent: true);
+            ReleaseMouseCapture();
+            e.Handled = true;
+            return;
+        }
+
         if (_isRotating)
         {
             _isRotating = false;
@@ -171,6 +195,7 @@ public partial class PointCloudViewer
         // 同步旋转基准，保证随后左键 Orbit 时不会因为沿用旧欧拉角而突然跳变或看起来“放大/缩小”。
         SyncRotationFromCameraOffset();
 
+        _roiNeedsRebuild = true;
         _needsRender = true;
     }
 

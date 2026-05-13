@@ -16,6 +16,14 @@ namespace CloudView.Controls;
 
 public partial class PointCloudViewer : Control, IDisposable
 {
+    private enum RoiInteractionMode
+    {
+        None,
+        Move,
+        Resize,
+        Rotate,
+    }
+
     static PointCloudViewer()
     {
         DefaultStyleKeyProperty.OverrideMetadata(typeof(PointCloudViewer),
@@ -115,6 +123,13 @@ public partial class PointCloudViewer : Control, IDisposable
             typeof(PointCloudViewer),
             new PropertyMetadata(float.MaxValue, OnPointsChanged));
 
+    public static readonly DependencyProperty RoisProperty =
+        DependencyProperty.Register(
+            nameof(Rois),
+            typeof(IList<RoiBase>),
+            typeof(PointCloudViewer),
+            new PropertyMetadata(null, OnRoisChanged));
+
     public IList<PointCloudPoint>? Points
     {
         get => (IList<PointCloudPoint>?)GetValue(PointsProperty);
@@ -193,6 +208,30 @@ public partial class PointCloudViewer : Control, IDisposable
         set => SetValue(MaxZProperty, value);
     }
 
+    /// <summary>
+    /// 外部传入的 ROI 集合。
+    /// </summary>
+    public IList<RoiBase>? Rois
+    {
+        get => (IList<RoiBase>?)GetValue(RoisProperty);
+        set => SetValue(RoisProperty, value);
+    }
+
+    /// <summary>
+    /// 当前活动 ROI。
+    /// </summary>
+    public RoiBase? ActiveRoi => _activeRoi;
+
+    /// <summary>
+    /// 当前活动 ROI 的筛选结果。
+    /// </summary>
+    public RoiFilterResult ActiveRoiFilterResult => _activeRoiFilterResult;
+
+    /// <summary>
+    /// 当前活动 ROI 的统计结果。
+    /// </summary>
+    public RoiStatisticsResult ActiveRoiStatisticsResult => _activeRoiStatisticsResult;
+
     #endregion
 
     #region 事件
@@ -204,11 +243,42 @@ public partial class PointCloudViewer : Control, IDisposable
             typeof(EventHandler<MousePositionEventArgs>),
             typeof(PointCloudViewer));
 
+    public static readonly RoutedEvent RoiSelectedEvent =
+        EventManager.RegisterRoutedEvent(
+            nameof(RoiSelected),
+            RoutingStrategy.Bubble,
+            typeof(EventHandler<RoiSelectionEventArgs>),
+            typeof(PointCloudViewer));
+
     public event EventHandler<MousePositionEventArgs>? MousePositionChanged
     {
         add => AddHandler(MousePositionChangedEvent, value);
         remove => RemoveHandler(MousePositionChangedEvent, value);
     }
+
+    /// <summary>
+    /// ROI 筛选结果更新时触发。
+    /// </summary>
+    public event EventHandler<RoiSelectionEventArgs>? RoiSelected
+    {
+        add => AddHandler(RoiSelectedEvent, value);
+        remove => RemoveHandler(RoiSelectedEvent, value);
+    }
+
+    /// <summary>
+    /// ROI 结果发生变化时触发。
+    /// </summary>
+    public event EventHandler<RoiResultsChangedEventArgs>? RoiResultsChanged;
+
+    /// <summary>
+    /// 活动 ROI 变化时触发。
+    /// </summary>
+    public event EventHandler<ActiveRoiChangedEventArgs>? ActiveRoiChanged;
+
+    /// <summary>
+    /// ROI 被编辑后触发。
+    /// </summary>
+    public event EventHandler<RoiEditedEventArgs>? RoiEdited;
 
     #endregion
 
@@ -272,6 +342,21 @@ public partial class PointCloudViewer : Control, IDisposable
     private uint _gizmoVao;
     private uint _gizmoVbo;
     private readonly Dictionary<string, (uint texture, int width, int height)> _gizmoTextCache = new();
+
+    private readonly List<SharpRenderItem> _roiRenderItems = new();
+    private readonly List<BaseSharp> _roiVisualShapes = new();
+    private readonly List<RoiScreenSegment> _roiScreenSegments = new();
+    private readonly List<RoiHandleVisual> _roiHandleVisuals = new();
+    private bool _roiNeedsRebuild;
+    private RoiBase? _activeRoi;
+    private RoiHandleVisual? _activeRoiHandle;
+    private RoiInteractionMode _roiInteractionMode;
+    private Vector3 _interactionPlanePoint;
+    private Vector3 _interactionPlaneNormal = Vector3.UnitZ;
+    private Vector3 _lastInteractionWorldPoint;
+    private Point _lastInteractionScreenPoint;
+    private RoiFilterResult _activeRoiFilterResult = RoiFilterResult.Empty;
+    private RoiStatisticsResult _activeRoiStatisticsResult = RoiStatisticsResult.Empty;
 
     private int _currentLodLevel;
     private bool _useLod = true;
@@ -406,6 +491,8 @@ public partial class PointCloudViewer : Control, IDisposable
                 viewer._gridNeedsUpdate = true;
             }
 
+            viewer.OnRoiInputsChanged();
+
             viewer._needsRender = true;
         }
     }
@@ -473,6 +560,12 @@ public partial class PointCloudViewer : Control, IDisposable
 
     #endregion
 
+    private partial bool TryBeginRoiInteraction(Point position);
+
+    private partial void UpdateRoiInteraction(Point currentPosition);
+
+    private partial void CompleteRoiInteraction(bool raiseEditedEvent);
+
     #region 公共方法
 
     public void LoadFromFloatArray(float[] positions, Vector4? defaultColor = null)
@@ -504,6 +597,7 @@ public partial class PointCloudViewer : Control, IDisposable
         _zoom = 5;
         _cameraTarget = Vector3.Zero;
         _cameraPosition = new Vector3(0, 0, _zoom);
+        _roiNeedsRebuild = true;
         _needsRender = true;
     }
 
@@ -529,6 +623,7 @@ public partial class PointCloudViewer : Control, IDisposable
         _rotationX = 0;
         _rotationY = 0;
 
+        _roiNeedsRebuild = true;
         _needsRender = true;
     }
 

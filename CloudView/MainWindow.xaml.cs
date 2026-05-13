@@ -16,7 +16,7 @@ namespace CloudView
             InitializeComponent();
             
             // 订阅 ROI 选择事件
-            //PointCloudViewer.RoiSelected += OnRoiSelected;
+            PointCloudViewer.RoiSelected += OnRoiSelected;
         }
 
         private void OnRoiSelected(object? sender, RoiSelectionEventArgs e)
@@ -44,7 +44,7 @@ namespace CloudView
 
         /// <summary>
         /// 测试旋转中心
-        /// 当加载点云后，右键拖动旋转，摄像机应该围绕点云中心旋转而不是原点
+        /// 当加载点云后，左键拖动旋转，摄像机应该围绕点云中心旋转而不是原点
         /// 可以通过观察旋转后的视图是否保持点云在中心来验证
         /// </summary>
         private void TestRotationCenter()
@@ -55,7 +55,7 @@ namespace CloudView
                 var sb = new System.Text.StringBuilder();
                 sb.AppendLine("✅ 旋转中心测试方法：");
                 sb.AppendLine("1. 已加载点云");
-                sb.AppendLine("2. 使用右键拖动旋转视图");
+                sb.AppendLine("2. 使用左键拖动旋转视图");
                 sb.AppendLine("3. 观察点云是否始终在视野中心旋转");
                 sb.AppendLine("4. 如果是，表示旋转中心正确");
                 sb.AppendLine("");
@@ -214,7 +214,8 @@ namespace CloudView
             sb.AppendLine("  颜色: 蓝色 RGB(0, 100, 255) Alpha=0.5");
             sb.AppendLine("");
             sb.AppendLine("操作：");
-            sb.AppendLine("• 右键拖动可旋转视图");
+            sb.AppendLine("• 左键拖动可旋转视图");
+            sb.AppendLine("• 右键拖动可平移视图");
             sb.AppendLine("• 滚轮可缩放");
             vm.StatusMessage = sb.ToString();
 
@@ -253,8 +254,8 @@ namespace CloudView
             sb.AppendLine("  三角形3: 黄色(Z=2)");
             sb.AppendLine("");
             sb.AppendLine("操作：");
-            sb.AppendLine("• 右键拖动可旋转视图");
-            sb.AppendLine("• 中键拖动可平移视图");
+            sb.AppendLine("• 左键拖动可旋转视图");
+            sb.AppendLine("• 右键拖动可平移视图");
             vm.StatusMessage = sb.ToString();
 
             var triangles = new List<BaseSharp>
@@ -657,6 +658,221 @@ namespace CloudView
             ) { Name = "Cylinder" };
 
             PointCloudViewer.Shapes = new List<BaseSharp> { cylinder };
+        }
+
+        private void LoadBoxRoi_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = GetViewModel();
+            if (vm == null) return;
+
+            EnsurePointCloud(vm);
+
+            PointCloudViewer.Shapes = null;
+            PointCloudViewer.Rois = new List<RoiBase>
+            {
+                new BoxRoi
+                {
+                    Name = "Box ROI",
+                    Center = Vector3.Zero,
+                    Size = new Vector3(1.6f, 1.2f, 1.4f),
+                    Color = System.Windows.Media.Color.FromArgb(255, 255, 196, 64),
+                }
+            };
+
+            vm.StatusMessage = "✅ 已加载立方体 ROI\n左键命中 ROI 时可编辑，点空白处可旋转视图\n右键平移，滚轮缩放";
+        }
+
+        private void LoadSphereRoi_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = GetViewModel();
+            if (vm == null) return;
+
+            EnsurePointCloud(vm);
+
+            PointCloudViewer.Shapes = null;
+            PointCloudViewer.Rois = new List<RoiBase>
+            {
+                new SphereRoi
+                {
+                    Name = "Sphere ROI",
+                    Center = new Vector3(0.1f, 0.1f, 0.1f),
+                    Radius = 0.9f,
+                    Color = System.Windows.Media.Color.FromArgb(255, 164, 121, 255),
+                }
+            };
+
+            vm.StatusMessage = "✅ 已加载球体 ROI\n可拖动半径控制点调整大小，并支持整体移动与旋转";
+        }
+
+        private void LoadCylinderRoi_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = GetViewModel();
+            if (vm == null) return;
+
+            EnsurePointCloud(vm);
+
+            PointCloudViewer.Shapes = null;
+            PointCloudViewer.Rois = new List<RoiBase>
+            {
+                new CylinderRoi
+                {
+                    Name = "Cylinder ROI",
+                    Center = new Vector3(-0.2f, 0.0f, 0.15f),
+                    Radius = 0.65f,
+                    Height = 1.8f,
+                    Color = System.Windows.Media.Color.FromArgb(255, 96, 203, 255),
+                }
+            };
+
+            vm.StatusMessage = "✅ 已加载圆柱 ROI\n可拖动半径 / 高度控制点，并支持旋转姿态";
+        }
+
+        private void LoadConeRoi_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = GetViewModel();
+            if (vm == null) return;
+
+            EnsurePointCloud(vm);
+
+            PointCloudViewer.Shapes = null;
+            PointCloudViewer.Rois = new List<RoiBase>
+            {
+                new ConeRoi
+                {
+                    Name = "Cone ROI",
+                    Center = new Vector3(0.0f, -0.1f, 0.0f),
+                    Radius = 0.75f,
+                    Height = 1.7f,
+                    Color = System.Windows.Media.Color.FromArgb(255, 255, 128, 96),
+                }
+            };
+
+            vm.StatusMessage = "✅ 已加载圆锥 ROI\n支持底半径、高度与整体姿态编辑";
+        }
+
+        private void LoadMultiRoi_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = GetViewModel();
+            if (vm == null) return;
+
+            EnsurePointCloud(vm);
+
+            PointCloudViewer.Shapes = null;
+            PointCloudViewer.Rois = new List<RoiBase>
+            {
+                new BoxRoi
+                {
+                    Name = "Box ROI",
+                    Center = new Vector3(-0.7f, 0.0f, 0.0f),
+                    Size = new Vector3(0.9f, 1.2f, 0.9f),
+                    Color = System.Windows.Media.Color.FromArgb(255, 255, 196, 64),
+                },
+                new SphereRoi
+                {
+                    Name = "Sphere ROI",
+                    Center = new Vector3(0.9f, 0.3f, 0.0f),
+                    Radius = 0.55f,
+                    Color = System.Windows.Media.Color.FromArgb(255, 164, 121, 255),
+                },
+                new CylinderRoi
+                {
+                    Name = "Cylinder ROI",
+                    Center = new Vector3(0.1f, -0.6f, -0.4f),
+                    Radius = 0.45f,
+                    Height = 1.2f,
+                    Color = System.Windows.Media.Color.FromArgb(255, 96, 203, 255),
+                },
+                new ConeRoi
+                {
+                    Name = "Cone ROI",
+                    Center = new Vector3(0.2f, 0.2f, 0.95f),
+                    Radius = 0.4f,
+                    Height = 1.1f,
+                    Color = System.Windows.Media.Color.FromArgb(255, 255, 128, 96),
+                }
+            };
+
+            vm.StatusMessage = "✅ 已加载多 ROI 测试集合\n左键点击任意 ROI 可切换活动对象，并对活动 ROI 进行编辑";
+        }
+
+        private void RunActiveRoiFilter_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = GetViewModel();
+            if (vm == null) return;
+
+            var result = PointCloudViewer.FilterActiveRoi();
+            if (result.Roi == null)
+            {
+                vm.StatusMessage = "❌ 请先加载并选中一个 ROI";
+                return;
+            }
+
+            vm.StatusMessage = $"✅ ROI 筛选完成\n活动 ROI: {result.Roi.Name}\n命中点数: {result.SelectedIndices.Count}";
+        }
+
+        private void RunActiveRoiStatistics_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = GetViewModel();
+            if (vm == null) return;
+
+            var result = PointCloudViewer.CalculateActiveRoiStatistics();
+            if (result.Roi == null || result.PointCount == 0)
+            {
+                vm.StatusMessage = "⚠️ 当前 ROI 内没有命中点，无法统计";
+                return;
+            }
+
+            vm.StatusMessage = $"✅ ROI 统计完成\n活动 ROI: {result.Roi.Name}\n命中点数: {result.PointCount}\n" +
+                               $"质心: ({result.Centroid.X:F3}, {result.Centroid.Y:F3}, {result.Centroid.Z:F3})\n" +
+                               $"最小值: ({result.Min.X:F3}, {result.Min.Y:F3}, {result.Min.Z:F3})\n" +
+                               $"最大值: ({result.Max.X:F3}, {result.Max.Y:F3}, {result.Max.Z:F3})";
+        }
+
+        private void RunActiveRoiCropKeep_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = GetViewModel();
+            if (vm == null) return;
+
+            var result = PointCloudViewer.CropActiveRoi(RoiCropMode.KeepInside);
+            if (result.Roi == null)
+            {
+                vm.StatusMessage = "❌ 请先加载并选中一个 ROI";
+                return;
+            }
+
+            vm.Points = result.KeptPoints.ToList();
+            PointCloudViewer.FitToView();
+            vm.StatusMessage = $"✅ 已执行裁剪（保留 ROI 内点）\n活动 ROI: {result.Roi.Name}\n保留点数: {result.KeptPoints.Count}\n剔除点数: {result.RemovedPoints.Count}";
+        }
+
+        private void RunActiveRoiCropRemove_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = GetViewModel();
+            if (vm == null) return;
+
+            var result = PointCloudViewer.CropActiveRoi(RoiCropMode.RemoveInside);
+            if (result.Roi == null)
+            {
+                vm.StatusMessage = "❌ 请先加载并选中一个 ROI";
+                return;
+            }
+
+            vm.Points = result.KeptPoints.ToList();
+            PointCloudViewer.FitToView();
+            vm.StatusMessage = $"✅ 已执行裁剪（剔除 ROI 内点）\n活动 ROI: {result.Roi.Name}\n保留点数: {result.KeptPoints.Count}\n剔除点数: {result.RemovedPoints.Count}";
+        }
+
+        private MainViewModel? GetViewModel()
+        {
+            return DataContext as MainViewModel;
+        }
+
+        private static void EnsurePointCloud(MainViewModel vm)
+        {
+            if (vm.Points == null || vm.Points.Count == 0)
+            {
+                vm.GenerateSamplePointCloudCommand.Execute(null);
+            }
         }
     }
 }

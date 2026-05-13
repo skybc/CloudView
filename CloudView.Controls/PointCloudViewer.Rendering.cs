@@ -176,6 +176,9 @@ void main()
             _gl.BindVertexArray(0);
         }
 
+        // 在点云之后绘制 ROI，保证线框控制点清晰可见且不遮挡数据主体。
+        RenderRois();
+
         // 绘制右上角鼠标位置信息覆盖层
         DrawOverlay(width, height);
 

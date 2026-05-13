@@ -59,6 +59,11 @@ public partial class PointCloudViewer
         {
             UpdateShapesBuffers();
         }
+
+        if ((_roiNeedsRebuild && Rois != null) || (Rois != null && Rois.Count > 0))
+        {
+            UpdateRoiBuffers();
+        }
     }
 
     private nint GetProcAddressFunc(string name)
@@ -179,6 +184,7 @@ public partial class PointCloudViewer
             _gizmoTextCache.Clear();
 
             CleanupSharpBuffers();
+            CleanupRoiBuffers();
 
             _gl = null;
         }
