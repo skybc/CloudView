@@ -335,6 +335,12 @@ viewer.RoiSelected += (sender, args) =>
 
 ## 最近更新 ✨
 
+### v2.8 - PointCloudViewer 注释整理
+- **内容**：
+  - 为 `PointCloudViewer` 主控制器、OpenGL 初始化、鼠标交互、ROI 编辑和 Shapes 管线补充了详细中文注释
+  - 重点解释了摄像机 Orbit / 平移 / 缩放、MVP 坐标变换、ROI 命中测试和手柄几何生成原理
+  - 强调了 GPU 资源、缓存与脏标记的生命周期，方便后续维护时快速定位问题
+
 ### v2.6 - 摄像机平移功能
 - **功能新增**：
   - 实现右键拖动进行视野平移

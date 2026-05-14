@@ -8,6 +8,7 @@ namespace CloudView.Controls;
 
 public partial class PointCloudViewer
 {
+    // ROI 命中后，会把可交互部件拆成“哪一类手柄”再进入后续编辑状态。
     private enum RoiHandleKind
     {
         PositiveX,
@@ -23,12 +24,16 @@ public partial class PointCloudViewer
 
     private sealed class RoiHandleVisual
     {
+        // Roi：这个手柄属于哪个 ROI。
         public required RoiBase Roi { get; init; }
 
+        // Kind：它是缩放手柄还是旋转手柄，以及具体属于哪个轴向。
         public required RoiHandleKind Kind { get; init; }
 
+        // Position：用于屏幕命中测试的世界坐标。
         public required Vector3 Position { get; init; }
 
+        // LocalAxis：手柄的局部方向，用于把鼠标拖拽增量转换到 ROI 自身坐标系中。
         public required Vector3 LocalAxis { get; init; }
     }
 
@@ -41,8 +46,10 @@ public partial class PointCloudViewer
             End = end;
         }
 
+        // 这条屏幕段属于哪个 ROI；命中后可把点击映射回具体对象。
         public RoiBase Roi { get; }
 
+        // Start/End 是 ROI 线框在世界空间中的两个端点。
         public Vector3 Start { get; }
 
         public Vector3 End { get; }
@@ -52,6 +59,7 @@ public partial class PointCloudViewer
     {
         if (d is PointCloudViewer viewer)
         {
+            // 外部 ROI 集合变化后，必须重新确认活动对象和可视化缓存。
             viewer.OnRoiInputsChanged();
         }
     }
@@ -61,6 +69,7 @@ public partial class PointCloudViewer
     /// </summary>
     public void RefreshRois()
     {
+        // 暴露给宿主的手动刷新入口：适合外部批量修改 ROI 后一次性刷新。
         OnRoiInputsChanged();
     }
 
@@ -92,6 +101,7 @@ public partial class PointCloudViewer
 
     private void OnRoiInputsChanged()
     {
+        // ROI 集合变化后，先修正活动 ROI，再重建可视化并重算筛选统计。
         EnsureActiveRoi();
         _roiNeedsRebuild = true;
         UpdateRoiResults();
@@ -100,6 +110,7 @@ public partial class PointCloudViewer
 
     private void EnsureActiveRoi()
     {
+        // 如果活动 ROI 已经不在集合里、不可见，或者被外部替换，就清空活动对象。
         if (_activeRoi != null && Rois?.Contains(_activeRoi) == true && _activeRoi.IsVisible)
         {
             return;
@@ -115,6 +126,7 @@ public partial class PointCloudViewer
             return;
         }
 
+        // 活动 ROI 是所有编辑/高亮/结果统计的中心状态，因此切换时要同步刷新缓存和事件。
         _activeRoi = roi;
         _roiNeedsRebuild = true;
         UpdateRoiResults();
@@ -124,9 +136,11 @@ public partial class PointCloudViewer
 
     private void UpdateRoiResults()
     {
+        // 统一通过服务层做筛选和统计，避免 UI 代码和业务几何判断混在一起。
         _activeRoiFilterResult = RoiPointQueryService.Filter(Points, _activeRoi);
         _activeRoiStatisticsResult = RoiPointQueryService.CalculateStatistics(_activeRoiFilterResult);
 
+        // 结果通过依赖属性同步给外部绑定，同时发出路由事件和 CLR 事件。
         SelectedIndices = _activeRoiFilterResult.SelectedIndices;
         SelectedPoints = _activeRoiFilterResult.SelectedPoints;
 
@@ -182,6 +196,7 @@ public partial class PointCloudViewer
             return;
         }
 
+        // ROI 视觉对象会频繁变化，因此每次重建前先把旧 GPU 缓冲释放掉。
         ClearRoiBuffers();
 
         if (Rois == null || Rois.Count == 0)
@@ -192,6 +207,7 @@ public partial class PointCloudViewer
 
         foreach (var roi in Rois.Where(r => r.IsVisible))
         {
+            // 先构建主体线框，再决定是否给活动 ROI 追加编辑手柄。
             AddRoiBodyVisuals(roi);
 
             if (ReferenceEquals(roi, _activeRoi) && !roi.IsLocked)
@@ -202,6 +218,7 @@ public partial class PointCloudViewer
 
         foreach (var shape in _roiVisualShapes)
         {
+            // ROI 内部复用通用的 Sharp 渲染构建器，把线框和实体手柄统一转成 GPU 几何。
             var builder = ResolveBuilder(shape.GetType());
             if (builder == null)
             {
@@ -278,6 +295,7 @@ public partial class PointCloudViewer
 
     private void AddRoiBodyVisuals(RoiBase roi)
     {
+        // 活动 ROI 用更亮的颜色和更粗的线条，作为视觉反馈。
         Color baseColor = ReferenceEquals(roi, _activeRoi)
             ? Brighten(roi.Color, 28)
             : ApplyAlpha(roi.Color, 210);
@@ -302,6 +320,7 @@ public partial class PointCloudViewer
 
     private void AddRoiEditVisuals(RoiBase roi)
     {
+        // 编辑态统一使用金色控制手柄，降低不同 ROI 类型带来的认知成本。
         float handleLineWidth = 2.2f;
 
         switch (roi)
@@ -325,6 +344,7 @@ public partial class PointCloudViewer
 
     private void BuildBoxVisuals(BoxRoi box, Color color, float lineWidth, bool includeHandles)
     {
+        // 盒体先计算局部八个角点，再映射到世界空间，保证旋转后的 ROI 仍然是正确的空间盒。
         Vector3 half = box.Size * 0.5f;
         Vector3[] corners =
         {
@@ -360,6 +380,7 @@ public partial class PointCloudViewer
 
     private void BuildSphereVisuals(SphereRoi sphere, Color color, float lineWidth, bool includeHandles)
     {
+        // 球体用三组相互垂直的圆环表达，足以在视图中传达半径和中心。
         AddCircleShape(sphere, Vector3.Zero, Vector3.UnitX, Vector3.UnitY, sphere.Radius, color, lineWidth);
         AddCircleShape(sphere, Vector3.Zero, Vector3.UnitX, Vector3.UnitZ, sphere.Radius, color, lineWidth);
         AddCircleShape(sphere, Vector3.Zero, Vector3.UnitY, Vector3.UnitZ, sphere.Radius, color, lineWidth);
@@ -376,6 +397,7 @@ public partial class PointCloudViewer
 
     private void BuildCylinderVisuals(CylinderRoi cylinder, Color color, float lineWidth, bool includeHandles)
     {
+        // 圆柱通过上下圆环 + 侧面脊线表达，高度和半径变化都能直观看出来。
         float halfHeight = cylinder.Height * 0.5f;
         AddCircleShape(cylinder, new Vector3(0, halfHeight, 0), Vector3.UnitX, Vector3.UnitZ, cylinder.Radius, color, lineWidth);
         AddCircleShape(cylinder, new Vector3(0, -halfHeight, 0), Vector3.UnitX, Vector3.UnitZ, cylinder.Radius, color, lineWidth);
@@ -406,6 +428,7 @@ public partial class PointCloudViewer
 
     private void BuildConeVisuals(ConeRoi cone, Color color, float lineWidth, bool includeHandles)
     {
+        // 圆锥用底环 + 顶点辐射线表达，便于观察高度、半径和尖端位置。
         float halfHeight = cone.Height * 0.5f;
         Vector3 apex = new(0, halfHeight, 0);
         Vector3 baseCenter = new(0, -halfHeight, 0);
@@ -437,6 +460,7 @@ public partial class PointCloudViewer
 
     private void AddRotationVisuals(RoiBase roi)
     {
+        // 三个旋转环分别对应 X/Y/Z 轴，颜色与手柄轴向保持一致，减少误判。
         float radius = MathF.Max(roi.GetBoundingRadius() * 1.2f, GetHandleScale(roi) * 2.5f);
         bool highlightX = IsHandleEmphasized(roi, RoiHandleKind.RotateX);
         bool highlightY = IsHandleEmphasized(roi, RoiHandleKind.RotateY);
@@ -480,6 +504,7 @@ public partial class PointCloudViewer
 
     private void AddRotationHandle(RoiBase roi, RoiHandleKind kind, Vector3 localAxisX, Vector3 localAxisY, float radius, Color color)
     {
+        // 旋转手柄本体是环上的箭头标记，命中位置直接取标记中心即可。
         bool emphasized = IsHandleEmphasized(roi, kind);
         float scaleMultiplier = emphasized ? 1.35f : 1.0f;
         Vector3 axis = kind switch
@@ -502,6 +527,7 @@ public partial class PointCloudViewer
 
     private Vector3 AddDirectionalArrowGlyph(RoiBase roi, Vector3 worldAnchor, Vector3 worldDirection, Color fillColor, float scaleMultiplier)
     {
+        // 方向箭头由“短圆柱 + 锥体”组成，既能看出拖拽方向，也方便命中测试。
         float scale = GetHandleScale(roi) * scaleMultiplier;
         Vector3 axis = SafeNormalize(worldDirection, Vector3.UnitX);
         CreatePerpendicularBasis(axis, out var sideA, out var sideB);
@@ -524,6 +550,7 @@ public partial class PointCloudViewer
 
     private Vector3 AddRingArrowGlyph(RoiBase roi, Vector3 localAxisX, Vector3 localAxisY, float radius, Color fillColor, float scaleMultiplier)
     {
+        // 旋转手柄需要在环上形成一个明显“箭头标记”，因此使用双向圆锥 + 短圆柱。
         const float markerAngle = 0.68f;
 
         Vector3 radialLocal = Vector3.Normalize((MathF.Cos(markerAngle) * localAxisX) + (MathF.Sin(markerAngle) * localAxisY));
@@ -555,6 +582,7 @@ public partial class PointCloudViewer
 
     private void AddSolidCylinderShape(RoiBase roi, Vector3 startCenter, Vector3 endCenter, float radius, Color color, int segments)
     {
+        // 实心圆柱的做法是：两端圆环 + 侧面四边形切成三角形。
         CreatePerpendicularBasis(SafeNormalize(endCenter - startCenter, Vector3.UnitY), out var sideA, out var sideB);
         var startRing = CreateWorldCirclePoints(startCenter, sideA, sideB, radius, segments);
         var endRing = CreateWorldCirclePoints(endCenter, sideA, sideB, radius, segments);
@@ -601,6 +629,7 @@ public partial class PointCloudViewer
 
     private void AddSolidConeShape(RoiBase roi, Vector3 baseCenter, Vector3 tip, float baseRadius, Color color, int segments)
     {
+        // 实心圆锥与圆柱类似，但把顶端收敛到单一点即可。
         CreatePerpendicularBasis(SafeNormalize(tip - baseCenter, Vector3.UnitY), out var sideA, out var sideB);
         var baseRing = CreateWorldCirclePoints(baseCenter, sideA, sideB, baseRadius, segments);
 
@@ -633,6 +662,7 @@ public partial class PointCloudViewer
 
     private void AddVolumeShape(IEnumerable<Vector3> vertices, IEnumerable<uint> indices, Color color, RoiBase roi)
     {
+        // ROI 的“实体”最终统一以 VolumeSharp 进入通用渲染管线。
         _roiVisualShapes.Add(new VolumeSharp(vertices, indices, color, drawFill: true, drawOutline: false, lineWidth: 1.0f)
         {
             Name = $"{roi.Name}-{roi.Kind}-Volume"
@@ -641,12 +671,14 @@ public partial class PointCloudViewer
 
     private void AddCircleShape(RoiBase roi, Vector3 localCenter, Vector3 localAxisX, Vector3 localAxisY, float radius, Color color, float lineWidth, bool addSegments = true)
     {
+        // 圆环通过离散采样点构成闭合折线，点数足够多时视觉上接近连续曲线。
         var points = CreateCirclePoints(roi, localCenter, localAxisX, localAxisY, radius, 96);
         AddPolylineShape(points, color, lineWidth, true, roi, addSegments);
     }
 
     private Vector3[] CreateCirclePoints(RoiBase roi, Vector3 localCenter, Vector3 localAxisX, Vector3 localAxisY, float radius, int segments)
     {
+        // 本质是参数方程采样：localCenter + cos(t)*X + sin(t)*Y。
         var points = new Vector3[segments];
         for (int i = 0; i < segments; i++)
         {
@@ -660,6 +692,7 @@ public partial class PointCloudViewer
 
     private Vector3[] CreateArcPoints(RoiBase roi, Vector3 localCenter, Vector3 localAxisX, Vector3 localAxisY, float radius, int segments, float startAngle, float endAngle)
     {
+        // 只采样圆弧的部分区间，常用于旋转手柄或局部标记。
         var points = new Vector3[segments];
         for (int i = 0; i < segments; i++)
         {
@@ -674,6 +707,7 @@ public partial class PointCloudViewer
 
     private static Vector3[] CreateWorldCirclePoints(Vector3 center, Vector3 axisX, Vector3 axisY, float radius, int segments)
     {
+        // 给定世界坐标的两个正交轴，生成圆环离散点。
         var points = new Vector3[segments];
         for (int i = 0; i < segments; i++)
         {
@@ -737,6 +771,7 @@ public partial class PointCloudViewer
 
     private bool IsHandleEmphasized(RoiBase roi, RoiHandleKind kind)
     {
+        // 任何一个环节命中都应高亮：当前活动、正在拖拽、或者悬停。
         return IsSameHandle(_activeRoiHandle, roi, kind)
             || IsSameHandle(_pendingHandle, roi, kind)
             || IsSameHandle(_hoveredHandle, roi, kind);
@@ -755,6 +790,7 @@ public partial class PointCloudViewer
             return;
         }
 
+        // 折线本体用于可视化；屏幕线段则用于点击命中。
         _roiVisualShapes.Add(new LineSharp(list, color, lineWidth, isClosed)
         {
             Name = $"{roi.Name}-{roi.Kind}-Polyline"
@@ -778,6 +814,7 @@ public partial class PointCloudViewer
 
     private void AddLineShape(Vector3 start, Vector3 end, Color color, float lineWidth, RoiBase roi, bool addSegments)
     {
+        // 单条线段同样要同时进入可视化集合和命中集合（如果需要）。
         _roiVisualShapes.Add(new LineSharp(new[] { start, end }, color, lineWidth)
         {
             Name = $"{roi.Name}-{roi.Kind}-Line"
@@ -791,12 +828,14 @@ public partial class PointCloudViewer
 
     private float GetHandleScale(RoiBase roi)
     {
+        // 控制点大小按相机到 ROI 的距离动态缩放，远处不至于太小，近处不至于夸张。
         float distance = Vector3.Distance(_cameraPosition, roi.Center);
         return MathF.Max(0.03f, distance * 0.03f);
     }
 
     private static Color GetHandleAccentColor(RoiHandleKind kind, Color fallback)
     {
+        // 不同轴向采用固定色相，帮助用户快速识别拖拽方向。
         return kind switch
         {
             RoiHandleKind.PositiveX or RoiHandleKind.NegativeX or RoiHandleKind.RotateX => Color.FromRgb(255, 122, 89),
@@ -822,11 +861,13 @@ public partial class PointCloudViewer
 
     private static Vector3 SafeNormalize(Vector3 vector, Vector3 fallback)
     {
+        // 任何归一化前先做长度检查，避免零向量导致 NaN。
         return vector.LengthSquared() <= 1e-6f ? fallback : Vector3.Normalize(vector);
     }
 
     private static void CreatePerpendicularBasis(Vector3 axis, out Vector3 sideA, out Vector3 sideB)
     {
+        // 为任意方向轴构建一个稳定的垂直基，避免与世界上方向平行时退化。
         Vector3 reference = MathF.Abs(Vector3.Dot(axis, Vector3.UnitY)) > 0.92f ? Vector3.UnitX : Vector3.UnitY;
         sideA = SafeNormalize(Vector3.Cross(axis, reference), Vector3.UnitZ);
         sideB = SafeNormalize(Vector3.Cross(axis, sideA), Vector3.UnitX);
@@ -845,6 +886,7 @@ public partial class PointCloudViewer
 
     private Rect GetProjectedBounds(RoiBase? roi)
     {
+        // 将 ROI 所有线段端点投影到屏幕，再取 2D 包围盒，供路由事件使用。
         if (roi == null || ActualWidth <= 0 || ActualHeight <= 0)
         {
             return Rect.Empty;
@@ -870,6 +912,7 @@ public partial class PointCloudViewer
 
     private Matrix4x4 GetCurrentMvp(int width, int height)
     {
+        // 命中测试和屏幕投影都依赖当前同一套 MVP，保证结果和显示一致。
         var model = Matrix4x4.Identity;
         var view = CreateLookAtMatrix(_cameraPosition, _cameraTarget, _cameraUp);
         var projection = CreatePerspectiveMatrix(_fov * MathF.PI / 180f, (float)width / height, 0.1f, 1000f);
@@ -883,6 +926,7 @@ public partial class PointCloudViewer
             return;
         }
 
+        // 中键作为额外的平移入口，方便某些鼠标布局没有独立右键的场景。
         _isPanning = true;
         _lastMousePosition = e.GetPosition(this);
         CaptureMouse();
@@ -906,6 +950,7 @@ public partial class PointCloudViewer
 
     private partial bool TryBeginRoiInteraction(Point position)
     {
+        // 先清掉上一次待判定的左键状态，再根据当前位置决定是否进入 ROI 交互。
         ClearPendingLeftGestureState();
 
         _isLeftGesturePending = true;
@@ -915,6 +960,7 @@ public partial class PointCloudViewer
 
         if (Rois != null && Rois.Count > 0)
         {
+            // 优先命中控制点：如果点中的是手柄，就直接进入编辑模式，而不是普通选择。
             if (_activeRoi != null && TryFindHandle(position, out var handle))
             {
                 _pendingHandle = handle;
@@ -926,6 +972,7 @@ public partial class PointCloudViewer
 
             if (TryFindBody(position, out var roi))
             {
+                // 点到 ROI 本体时，只记录“待选择/待拖拽”的目标，真正动作等移动阈值再判断。
                 if (ReferenceEquals(roi, _activeRoi))
                 {
                     _pendingMoveRoi = roi;
@@ -956,6 +1003,7 @@ public partial class PointCloudViewer
             return _roiInteractionMode != RoiInteractionMode.None || _isRotating;
         }
 
+        // 距离没超过阈值时视为单击，不立刻把它升级为拖拽。
         if ((currentPosition - _leftGestureStartPoint).Length < RoiClickMoveThreshold)
         {
             return false;
@@ -981,6 +1029,7 @@ public partial class PointCloudViewer
 
     private partial void CompletePendingLeftGestureSelection()
     {
+        // 左键没有移动到阈值时，按“单击选择”处理。
         if (!_isLeftGesturePending || _leftGestureMoved)
         {
             return;
@@ -1000,6 +1049,7 @@ public partial class PointCloudViewer
 
     private void BeginHandleInteraction(RoiHandleVisual handle, Point position)
     {
+        // 选中对应 ROI，并把当前拖拽绑定到这个控制点。
         SetActiveRoi(handle.Roi);
         _activeRoiHandle = handle;
         _roiInteractionMode = IsRotationHandle(handle.Kind) ? RoiInteractionMode.Rotate : RoiInteractionMode.Resize;
@@ -1018,6 +1068,7 @@ public partial class PointCloudViewer
 
     private void BeginMoveInteraction(RoiBase roi, Point position)
     {
+        // 移动 ROI 时，拖拽基准放在 ROI 中心所在的交互平面上。
         SetActiveRoi(roi);
         _activeRoiHandle = null;
         _roiInteractionMode = RoiInteractionMode.Move;
@@ -1029,6 +1080,7 @@ public partial class PointCloudViewer
 
     private void BeginViewRotation(Point position)
     {
+        // 如果没有命中 ROI，则把左键拖拽解释为视图 Orbit。
         _isRotating = true;
         _lastMousePosition = position;
         _isLeftGesturePending = false;
@@ -1052,6 +1104,7 @@ public partial class PointCloudViewer
 
     private void BeginPlaneInteraction(Vector3 planePoint, Point position)
     {
+        // 交互平面通常取向相机的平面，这样鼠标拖拽能转成稳定的世界坐标变化。
         _interactionPlanePoint = planePoint;
         _interactionPlaneNormal = Vector3.Normalize(_cameraTarget - _cameraPosition);
         if (_interactionPlaneNormal.LengthSquared() <= 1e-6f)
@@ -1076,6 +1129,7 @@ public partial class PointCloudViewer
             return;
         }
 
+        // 不同模式映射到不同的几何更新算法：平移、缩放或旋转。
         switch (_roiInteractionMode)
         {
             case RoiInteractionMode.Move:
@@ -1100,6 +1154,7 @@ public partial class PointCloudViewer
             return;
         }
 
+        // 把鼠标当前位置投到当前交互平面上，再求增量。
         if (!TryIntersectScreenWithPlane(currentPosition, _interactionPlanePoint, _interactionPlaneNormal, out var worldPoint))
         {
             return;
@@ -1118,6 +1173,7 @@ public partial class PointCloudViewer
             return;
         }
 
+        // 缩放时同样使用交互平面，避免直接按屏幕像素修改尺寸导致不同视角下手感不一致。
         if (!TryIntersectScreenWithPlane(currentPosition, _interactionPlanePoint, _interactionPlaneNormal, out var worldPoint))
         {
             return;
@@ -1162,6 +1218,7 @@ public partial class PointCloudViewer
             _ => Vector3.UnitZ,
         };
 
+        // 旋转角度来自“相对 ROI 屏幕中心的夹角变化”，比直接按像素增量更符合用户预期。
         int width = (int)ActualWidth;
         int height = (int)ActualHeight;
         Point centerScreen = WorldToScreen(_activeRoi.Center, GetCurrentMvp(width, height), width, height);
@@ -1202,6 +1259,8 @@ public partial class PointCloudViewer
 
     private void ResizeBox(BoxRoi box, RoiHandleVisual handle, Vector3 deltaWorld)
     {
+        // 盒体缩放时，沿被拖拽轴向改变尺寸，同时把中心点向外/向内平移一半增量，
+        // 这样盒子的另一侧会“固定住”而不是整体漂移。
         Vector3 axis = box.LocalAxisToWorld(GetPrincipalAxis(handle.Kind));
         float delta = Vector3.Dot(deltaWorld, axis);
         Vector3 size = box.Size;
@@ -1226,6 +1285,7 @@ public partial class PointCloudViewer
 
     private void ResizeSphere(SphereRoi sphere, RoiHandleVisual handle, Vector3 deltaWorld)
     {
+        // 球体没有独立的三轴尺寸，因此半径直接随轴向拖拽量变化。
         Vector3 axis = sphere.LocalAxisToWorld(GetPrincipalAxis(handle.Kind));
         float delta = Vector3.Dot(deltaWorld, axis);
         sphere.Radius = MathF.Max(0.01f, sphere.Radius + delta);
@@ -1233,6 +1293,7 @@ public partial class PointCloudViewer
 
     private void ResizeCylinder(CylinderRoi cylinder, RoiHandleVisual handle, Vector3 deltaWorld)
     {
+        // 圆柱的 X/Z 手柄控制半径，Y 手柄控制高度和中心点位置。
         if (handle.Kind is RoiHandleKind.PositiveX or RoiHandleKind.PositiveZ)
         {
             Vector3 axis = cylinder.LocalAxisToWorld(GetPrincipalAxis(handle.Kind));
@@ -1249,6 +1310,7 @@ public partial class PointCloudViewer
 
     private void ResizeCone(ConeRoi cone, RoiHandleVisual handle, Vector3 deltaWorld)
     {
+        // 圆锥与圆柱类似，但顶点与底面位置不同，因此高度拖拽会同时移动中心。
         if (handle.Kind == RoiHandleKind.PositiveX)
         {
             Vector3 axis = cone.LocalAxisToWorld(Vector3.UnitX);
@@ -1265,6 +1327,7 @@ public partial class PointCloudViewer
 
     private static bool IsRotationHandle(RoiHandleKind kind)
     {
+        // 仅三个 Rotate* 手柄进入旋转模式，其余都属于缩放/拉伸。
         return kind is RoiHandleKind.RotateX or RoiHandleKind.RotateY or RoiHandleKind.RotateZ;
     }
 
@@ -1280,6 +1343,7 @@ public partial class PointCloudViewer
 
     private static float GetHandleSign(RoiHandleKind kind)
     {
+        // 负向手柄返回 -1，正向手柄返回 +1，用于统一写缩放公式。
         return kind switch
         {
             RoiHandleKind.NegativeX or RoiHandleKind.NegativeY or RoiHandleKind.NegativeZ => -1f,
@@ -1295,6 +1359,7 @@ public partial class PointCloudViewer
             return false;
         }
 
+        // 命中测试用屏幕距离衡量，而不是世界距离，这样点击感受和用户视角一致。
         int width = (int)ActualWidth;
         int height = (int)ActualHeight;
         var mvp = GetCurrentMvp(width, height);
@@ -1329,6 +1394,7 @@ public partial class PointCloudViewer
             return false;
         }
 
+        // 线段命中采用“点到线段的像素距离”，这样 ROI 的每个边都能被点击选中。
         int width = (int)ActualWidth;
         int height = (int)ActualHeight;
         var mvp = GetCurrentMvp(width, height);
@@ -1358,6 +1424,7 @@ public partial class PointCloudViewer
 
     private static double DistanceToSegment(Point point, Point start, Point end)
     {
+        // 经典点到线段距离：先投影到线段所在直线，再把参数裁剪到 [0,1]。
         System.Windows.Vector segment = end - start;
         double lengthSquared = segment.LengthSquared;
         if (lengthSquared <= double.Epsilon)
@@ -1373,6 +1440,7 @@ public partial class PointCloudViewer
 
     private bool TryIntersectScreenWithPlane(Point screenPoint, Vector3 planePoint, Vector3 planeNormal, out Vector3 intersection)
     {
+        // 先从屏幕点生成一条视线，再与交互平面求交。
         intersection = Vector3.Zero;
         if (ActualWidth <= 0 || ActualHeight <= 0)
         {
@@ -1402,6 +1470,7 @@ public partial class PointCloudViewer
 
     private bool TryCreateScreenRay(Point screenPoint, int width, int height, out Vector3 origin, out Vector3 direction)
     {
+        // 屏幕射线由 near/far 两个 NDC 点反投影得到，适用于点击、拖拽和平面交点计算。
         origin = Vector3.Zero;
         direction = Vector3.UnitZ;
 
@@ -1430,6 +1499,7 @@ public partial class PointCloudViewer
 
     private partial void CompleteRoiInteraction(bool raiseEditedEvent)
     {
+        // ROI 拖拽/缩放/旋转结束后，重算筛选结果并可选触发“已编辑”事件。
         if (_roiInteractionMode != RoiInteractionMode.None && _activeRoi != null)
         {
             _roiNeedsRebuild = true;

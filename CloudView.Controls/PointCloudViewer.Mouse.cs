@@ -11,6 +11,8 @@ public partial class PointCloudViewer
 
     private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        // 左键先不直接决定“是选中还是旋转”，而是进入一个短暂的待判定窗口，
+        // 后续由移动距离决定这是单击还是拖拽。
         var currentPos = e.GetPosition(this);
         TryBeginRoiInteraction(currentPos);
         e.Handled = true;
@@ -26,6 +28,7 @@ public partial class PointCloudViewer
 
         if (width > 0 && height > 0)
         {
+            // 鼠标的屏幕位置实时反算成世界坐标，供右上角覆盖层显示。
             _currentMouseWorldPosition = ScreenToWorld(currentPos, width, height);
             _needsRender = true;
         }
@@ -34,6 +37,7 @@ public partial class PointCloudViewer
 
         if (_roiInteractionMode != RoiInteractionMode.None)
         {
+            // 一旦进入 ROI 编辑模式，拖拽优先解释为编辑，不再继续处理视图旋转/平移。
             UpdateRoiInteraction(currentPos);
             _lastMousePosition = currentPos;
             return;
@@ -43,6 +47,7 @@ public partial class PointCloudViewer
 
         if (_isRotating)
         {
+            // 左键拖拽视图时，按鼠标位移转换为欧拉角增量。
             var delta = currentPos - _lastMousePosition;
             _rotationY += (float)delta.X * 0.01f;
             _rotationX += (float)delta.Y * 0.01f;
@@ -84,6 +89,7 @@ public partial class PointCloudViewer
             if (up.LengthSquared() > 0f)
                 up = Vector3.Normalize(up);
 
+            // 鼠标 X 对应左右平移，鼠标 Y 对应上下平移；方向取反后更符合人类直觉。
             var move = (-right * (float)delta.X + up * (float)delta.Y) * worldPerPixel;
 
             // Pan 必须让相机和目标点一起移动，保持相对关系不变，避免反推相机位置带来的数值误差。
@@ -104,6 +110,7 @@ public partial class PointCloudViewer
 
     private void UpdateCameraPositionWithRotation()
     {
+        // Orbit 的核心：保留相机到目标点距离，把初始朝向向量旋转到新方向。
         var direction = _cameraPosition - _cameraTarget;
         float distance = direction.Length();
 
@@ -117,6 +124,8 @@ public partial class PointCloudViewer
 
     private void SyncRotationFromCameraOffset()
     {
+        // 当平移/缩放直接改变了相机位置时，需要重新从位置反推欧拉角，
+        // 否则下一次 Orbit 会基于过时的旋转基准产生跳变。
         var direction = _cameraPosition - _cameraTarget;
         float distance = direction.Length();
         const float orbitPitchLimit = 1.5533431f; // 89°，避免 pitch 反推后落在极点外
@@ -141,6 +150,7 @@ public partial class PointCloudViewer
     {
         if (_roiInteractionMode != RoiInteractionMode.None)
         {
+            // ROI 编辑完成后统一提交结果，再释放鼠标捕获。
             CompleteRoiInteraction(raiseEditedEvent: true);
             ReleaseMouseCapture();
             e.Handled = true;
@@ -161,6 +171,7 @@ public partial class PointCloudViewer
 
     private void OnMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
+        // 右键用于视野平移，因此按下即进入 pan 模式并捕获鼠标。
         _isPanning = true;
         _lastMousePosition = e.GetPosition(this);
         CaptureMouse();
@@ -177,6 +188,7 @@ public partial class PointCloudViewer
 
     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
     {
+        // 滚轮只改变相机到目标点的距离，不改变观察方向。
         _zoom -= e.Delta * 0.005f;
         _zoom = Math.Clamp(_zoom, 0.1f, 100f);
 
@@ -203,6 +215,7 @@ public partial class PointCloudViewer
 
     private static Point WorldToScreen(Vector3 worldPos, Matrix4x4 mvp, int width, int height)
     {
+        // 世界坐标 → 裁剪空间 → NDC → 屏幕像素，是 ROI 命中测试和标签摆放的基础。
         var clipPos = Vector4.Transform(new Vector4(worldPos, 1), mvp);
         if (clipPos.W == 0) return new Point(-1, -1);
 
@@ -216,6 +229,7 @@ public partial class PointCloudViewer
 
     private Vector3 ScreenToWorld(Point screenPos, int width, int height)
     {
+        // 反过来把屏幕像素映射到世界空间，用于鼠标世界坐标提示。
         float ndcX = (float)(screenPos.X / width * 2 - 1);
         float ndcY = -(float)(screenPos.Y / height * 2 - 1);
 

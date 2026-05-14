@@ -11,11 +11,13 @@ public partial class PointCloudViewer
 
     internal void InitializeOpenGL(IntPtr hwnd)
     {
+        // 这里完成的是“从 WPF 宿主窗口 → Win32 DC → OpenGL RC → Silk.NET GL API”的完整初始化链。
         _hwnd = hwnd;
         _hDC = Win32Interop.GetDC(hwnd);
         if (_hDC == IntPtr.Zero)
             throw new Exception("Failed to get device context");
 
+        // PFD 决定窗口像素格式：RGBA、双缓冲、深度缓冲和模板缓冲都在这里声明。
         var pfd = new Win32Interop.PIXELFORMATDESCRIPTOR
         {
             nSize = (ushort)Marshal.SizeOf<Win32Interop.PIXELFORMATDESCRIPTOR>(),
@@ -42,9 +44,11 @@ public partial class PointCloudViewer
         if (!Win32Interop.wglMakeCurrent(_hDC, _hGLRC))
             throw new Exception("Failed to make OpenGL context current");
 
+        // Silk.NET 需要通过 wglGetProcAddress / opengl32.dll 的组合获取函数入口。
         _gl = GL.GetApi(GetProcAddressFunc);
         _gl.Enable(EnableCap.Multisample);
 
+        // 初始化渲染所需的全部 GPU 资源：主着色器、文本着色器、点云/辅助图元缓冲等。
         InitializeShaders();
         InitializeTextShaders();
         InitializeBuffers();
@@ -69,6 +73,7 @@ public partial class PointCloudViewer
 
     private nint GetProcAddressFunc(string name)
     {
+        // 先查当前 OpenGL 上下文导出的函数，再回退到 opengl32.dll。
         var addr = Win32Interop.wglGetProcAddress(name);
         if (addr != IntPtr.Zero)
             return addr;
@@ -84,11 +89,13 @@ public partial class PointCloudViewer
     {
         if (_gl != null && _isInitialized)
         {
+            // 在销毁上下文前，先把它设为当前，确保删除调用在正确的设备上下文中执行。
             if (_hDC != IntPtr.Zero && _hGLRC != IntPtr.Zero)
             {
                 Win32Interop.wglMakeCurrent(_hDC, _hGLRC);
             }
 
+            // 点云、网格、坐标轴、覆盖层、文本和 ROI 都遵循“先删 VAO/VBO，再删 Program/Texture”的清理顺序。
             if (_vao != 0)
             {
                 _gl.DeleteVertexArray(_vao);
@@ -190,6 +197,7 @@ public partial class PointCloudViewer
             _gl = null;
         }
 
+        // 接着释放 WGL 上下文、设备上下文和动态加载的 opengl32.dll 句柄。
         if (_hGLRC != IntPtr.Zero)
         {
             Win32Interop.wglMakeCurrent(IntPtr.Zero, IntPtr.Zero);
@@ -216,6 +224,7 @@ public partial class PointCloudViewer
     {
         if (_gl == null) return;
 
+        // 先编译再链接：任何一个阶段失败都应给出明确错误信息，方便定位 GLSL 问题。
         uint vertexShader = _gl.CreateShader(ShaderType.VertexShader);
         _gl.ShaderSource(vertexShader, VertexShaderSource);
         _gl.CompileShader(vertexShader);
@@ -253,6 +262,7 @@ public partial class PointCloudViewer
         _gl.DeleteShader(vertexShader);
         _gl.DeleteShader(fragmentShader);
 
+        // 覆盖层与主场景分离，避免 2D UI 绘制污染 3D 管线状态。
         uint overlayVertexShader = _gl.CreateShader(ShaderType.VertexShader);
         _gl.ShaderSource(overlayVertexShader, OverlayVertexShaderSource);
         _gl.CompileShader(overlayVertexShader);
@@ -295,6 +305,7 @@ public partial class PointCloudViewer
     {
         if (_gl == null) return;
 
+        // 文本渲染独立使用一套 shader：顶点只处理像素坐标，片段读取文字纹理的 alpha。
         uint textVertexShader = _gl.CreateShader(ShaderType.VertexShader);
         _gl.ShaderSource(textVertexShader, TextVertexShaderSource);
         _gl.CompileShader(textVertexShader);
@@ -337,6 +348,7 @@ public partial class PointCloudViewer
     {
         if (_gl == null) return;
 
+        // 主点云缓冲使用 7 个 float/顶点：3 个位置 + 4 个颜色。
         _vao = _gl.GenVertexArray();
         _vbo = _gl.GenBuffer();
 
@@ -356,6 +368,7 @@ public partial class PointCloudViewer
     private unsafe void CreateCoordinateAxisAndGrid()
     {
         if (_gl == null) return;
+        // 坐标轴和网格在初始化阶段先建立一次；网格在缩放变化时再按需更新。
         CreateCoordinateAxis();
     }
 
@@ -363,6 +376,7 @@ public partial class PointCloudViewer
     {
         if (_gl == null) return;
 
+        // 轴线从点云中心出发，颜色按 X/Y/Z 轴分别使用红/绿/蓝。
         const float axisLength = 1.0f;
         var axisVertices = new float[]
         {
@@ -402,6 +416,7 @@ public partial class PointCloudViewer
     {
         if (_gl == null) return;
 
+        // 网格本质是一组平行于 X/Y 轴的线段，围绕点云中心在 XY 平面展开。
         const float gridSpacing = 0.1f;
         const float gridAlpha = 0.3f;
         const float gridR = 0.7f;
@@ -479,6 +494,7 @@ public partial class PointCloudViewer
     {
         if (_gl == null || !_isInitialized || Points == null) return;
 
+        // 每次更新前切到当前上下文，确保后续 BufferData 调用作用于正确的 OpenGL 设备。
         Win32Interop.wglMakeCurrent(_hDC, _hGLRC);
 
         var points = Points;
@@ -494,6 +510,7 @@ public partial class PointCloudViewer
         int stride = 1;
         if (_useLod && totalPoints > LodThreshold)
         {
+            // 大点云使用抽稀策略：采样步长由总点数自动推导，限制显示点数上限。
             stride = (totalPoints + MaxDisplayPoints - 1) / MaxDisplayPoints;
             _currentLodLevel = (int)Math.Log2(stride);
         }
@@ -510,6 +527,7 @@ public partial class PointCloudViewer
         {
             var point = points[i];
 
+            // 只有落在坐标范围内的点才进入 GPU 缓冲，既控制显示范围，也减少无效上传。
             if (point.Position.X >= minX && point.Position.X <= maxX &&
                 point.Position.Y >= minY && point.Position.Y <= maxY &&
                 point.Position.Z >= minZ && point.Position.Z <= maxZ)
@@ -528,6 +546,7 @@ public partial class PointCloudViewer
 
         if (_vertexCount == 0) return;
 
+        // 这里使用 StaticDraw 是因为点云在绝大多数交互中只在“数据变化”时更新，而不是每帧更新。
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
         fixed (float* data = vertices)
         {

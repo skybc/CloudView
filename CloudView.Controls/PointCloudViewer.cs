@@ -14,8 +14,18 @@ using PixelFormat = Silk.NET.OpenGL.PixelFormat;
 
 namespace CloudView.Controls;
 
+/// <summary>
+/// 点云查看器的控制层。
+/// <para>
+/// 该类本身不直接承担所有 OpenGL 细节，而是负责把 WPF 依赖属性、事件、
+/// 摄像机状态、ROI 交互状态和各个 partial 文件中的渲染逻辑串起来。
+/// </para>
+/// </summary>
 public partial class PointCloudViewer : Control, IDisposable
 {
+    /// <summary>
+    /// ROI 交互的内部状态机。
+    /// </summary>
     private enum RoiInteractionMode
     {
         None,
@@ -32,6 +42,8 @@ public partial class PointCloudViewer : Control, IDisposable
 
     #region 依赖属性
 
+    // 这些依赖属性就是外部宿主和 XAML 的主要入口。
+    // 它们一旦变化，就会触发缓冲区重建、ROI 重算或重绘标记，保证 UI 状态与 GPU 状态同步。
     public static readonly DependencyProperty PointsProperty =
         DependencyProperty.Register(
             nameof(Points),
@@ -130,78 +142,120 @@ public partial class PointCloudViewer : Control, IDisposable
             typeof(PointCloudViewer),
             new PropertyMetadata(null, OnRoisChanged));
 
+    /// <summary>
+    /// 外部传入的点云数据集合。
+    /// <para>
+    /// 当该值变化时，会重新计算可见点、点云中心、坐标轴与网格的参考中心。
+    /// </para>
+    /// </summary>
     public IList<PointCloudPoint>? Points
     {
         get => (IList<PointCloudPoint>?)GetValue(PointsProperty);
         set => SetValue(PointsProperty, value);
     }
 
+    /// <summary>
+    /// 点在屏幕上的像素大小。
+    /// </summary>
     public float PointSize
     {
         get => (float)GetValue(PointSizeProperty);
         set => SetValue(PointSizeProperty, value);
     }
 
+    /// <summary>
+    /// 渲染背景色。
+    /// </summary>
     public Color BackgroundColor
     {
         get => (Color)GetValue(BackgroundColorProperty);
         set => SetValue(BackgroundColorProperty, value);
     }
 
+    /// <summary>
+    /// 当前 ROI 筛选得到的点集合。
+    /// </summary>
     public IReadOnlyList<PointCloudPoint>? SelectedPoints
     {
         get => (IReadOnlyList<PointCloudPoint>?)GetValue(SelectedPointsProperty);
         set => SetValue(SelectedPointsProperty, value);
     }
 
+    /// <summary>
+    /// 当前 ROI 筛选得到的点索引集合。
+    /// </summary>
     public IReadOnlyList<int>? SelectedIndices
     {
         get => (IReadOnlyList<int>?)GetValue(SelectedIndicesProperty);
         set => SetValue(SelectedIndicesProperty, value);
     }
 
+    /// <summary>
+    /// 是否显示点云中心的三维坐标轴。
+    /// </summary>
     public bool ShowCoordinateAxis
     {
         get => (bool)GetValue(ShowCoordinateAxisProperty);
         set => SetValue(ShowCoordinateAxisProperty, value);
     }
 
+    /// <summary>
+    /// 是否显示 XY 平面网格。
+    /// </summary>
     public bool ShowGrid
     {
         get => (bool)GetValue(ShowGridProperty);
         set => SetValue(ShowGridProperty, value);
     }
 
+    /// <summary>
+    /// 可见点的 X 轴下界。
+    /// </summary>
     public float MinX
     {
         get => (float)GetValue(MinXProperty);
         set => SetValue(MinXProperty, value);
     }
 
+    /// <summary>
+    /// 可见点的 X 轴上界。
+    /// </summary>
     public float MaxX
     {
         get => (float)GetValue(MaxXProperty);
         set => SetValue(MaxXProperty, value);
     }
 
+    /// <summary>
+    /// 可见点的 Y 轴下界。
+    /// </summary>
     public float MinY
     {
         get => (float)GetValue(MinYProperty);
         set => SetValue(MinYProperty, value);
     }
 
+    /// <summary>
+    /// 可见点的 Y 轴上界。
+    /// </summary>
     public float MaxY
     {
         get => (float)GetValue(MaxYProperty);
         set => SetValue(MaxYProperty, value);
     }
 
+    /// <summary>
+    /// 可见点的 Z 轴下界。
+    /// </summary>
     public float MinZ
     {
         get => (float)GetValue(MinZProperty);
         set => SetValue(MinZProperty, value);
     }
 
+    /// <summary>
+    /// 可见点的 Z 轴上界。
+    /// </summary>
     public float MaxZ
     {
         get => (float)GetValue(MaxZProperty);
@@ -284,11 +338,14 @@ public partial class PointCloudViewer : Control, IDisposable
 
     #region 私有字段
 
+    // 下面这组字段都是“渲染设备与 GPU 资源句柄”，由 OpenGL 初始化/清理流程统一管理。
     internal IntPtr _hDC;
     internal IntPtr _hGLRC;
     internal GL? _gl;
     internal bool _isInitialized;
 
+    // 主场景、覆盖层、文本和辅助图元分别使用独立的着色器/VAO/VBO，
+    // 这样可以把不同原语的渲染状态隔离开，避免状态污染。
     private uint _shaderProgram;
     private uint _overlayShaderProgram;
     private uint _overlayVao;
@@ -300,6 +357,7 @@ public partial class PointCloudViewer : Control, IDisposable
     private uint _vbo;
     private int _vertexCount;
 
+    // 坐标轴与网格是随点云中心变化的辅助参考系。
     private uint _axisVao;
     private uint _axisVbo;
     private int _axisVertexCount;
@@ -308,6 +366,11 @@ public partial class PointCloudViewer : Control, IDisposable
     private uint _gridVbo;
     private int _gridVertexCount;
 
+    // 摄像机使用“目标点 + 距离 + 欧拉角”方式描述：
+    // - _cameraTarget 是观察中心
+    // - _cameraPosition 是眼睛位置
+    // - _rotationX/_rotationY 控制 Orbit 旋转
+    // - _zoom 决定眼睛到目标的距离
     private Vector3 _cameraPosition = new(0, 0, 5);
     private Vector3 _cameraTarget = Vector3.Zero;
     private Vector3 _cameraUp = Vector3.UnitY;
@@ -318,6 +381,7 @@ public partial class PointCloudViewer : Control, IDisposable
 
     private Vector3 _pointCloudCenter = Vector3.Zero;
 
+    // 鼠标交互状态：旋转、平移和 ROI 编辑互斥或半互斥，由这里统一协调。
     private bool _isRotating;
     private bool _isPanning;
     private Point _lastMousePosition;
@@ -329,11 +393,14 @@ public partial class PointCloudViewer : Control, IDisposable
 
     private DispatcherTimer? _renderTimer;
 
+    // 网格不必每一帧都重建，只有缩放变化明显或首次显示时才刷新。
     private float _lastGridZoom = -1f;
     private bool _gridNeedsUpdate = true;
 
+    // 通过脏标记把频繁输入事件和实际渲染解耦，避免鼠标一动就重绘。
     private bool _needsRender = true;
 
+    // 文本纹理和内容做缓存，减少每帧创建/销毁纹理带来的开销。
     private uint _cachedTextTexture;
     private string _cachedTextContent = string.Empty;
     private int _cachedTextWidth;
@@ -343,6 +410,10 @@ public partial class PointCloudViewer : Control, IDisposable
     private uint _gizmoVbo;
     private readonly Dictionary<string, (uint texture, int width, int height)> _gizmoTextCache = new();
 
+    // ROI 的可视化分成三层：
+    // 1. _roiRenderItems：最终上传 GPU 的渲染项
+    // 2. _roiVisualShapes：先以通用几何对象描述 ROI 的线框/实体
+    // 3. _roiScreenSegments：用于屏幕命中测试的线段集合
     private readonly List<SharpRenderItem> _roiRenderItems = new();
     private readonly List<BaseSharp> _roiVisualShapes = new();
     private readonly List<RoiScreenSegment> _roiScreenSegments = new();
@@ -379,6 +450,7 @@ public partial class PointCloudViewer : Control, IDisposable
 
     public PointCloudViewer()
     {
+        // 初始化共享的几何构建器注册表，并订阅 WPF 生命周期事件。
         InitializeSharpSupport();
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -431,6 +503,7 @@ public partial class PointCloudViewer : Control, IDisposable
     {
         base.OnApplyTemplate();
 
+        // 模板里的 PART_GLHost 是承载原生 OpenGL 窗口的锚点。
         _glHostGrid = (Grid)GetTemplateChild("PART_GLHost");
 
         if (_glHostGrid == null)
@@ -446,6 +519,7 @@ public partial class PointCloudViewer : Control, IDisposable
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        // 渲染循环由 DispatcherTimer 驱动，约 60 FPS。
         _renderTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(16)
@@ -462,6 +536,7 @@ public partial class PointCloudViewer : Control, IDisposable
 
     private void OnRenderTimerTick(object? sender, EventArgs e)
     {
+        // 只有在有脏标记时才真正渲染，避免空转。
         if (_needsRender)
         {
             _needsRender = false;
@@ -486,6 +561,7 @@ public partial class PointCloudViewer : Control, IDisposable
     {
         if (d is PointCloudViewer viewer)
         {
+            // 点云变化后，GPU 缓冲、中心点、坐标轴和 ROI 都要重新对齐。
             viewer.UpdatePointCloudBuffer();
 
             viewer._pointCloudCenter = viewer.CalculatePointCloudCenter();
@@ -524,6 +600,8 @@ public partial class PointCloudViewer : Control, IDisposable
             return Vector3.Zero;
         }
 
+        // 只用当前“可见范围内”的点来求 AABB 中心，保证视角、坐标轴和网格
+        // 都围绕实际显示内容，而不是被范围外的数据拉偏。
         float rangeMinX = MinX;
         float rangeMaxX = MaxX;
         float rangeMinY = MinY;
@@ -557,6 +635,7 @@ public partial class PointCloudViewer : Control, IDisposable
             return Vector3.Zero;
         }
 
+        // AABB 中心 = (min + max) / 2。
         var center = new Vector3(
             (minX + maxX) * 0.5f,
             (minY + maxY) * 0.5f,
@@ -584,6 +663,7 @@ public partial class PointCloudViewer : Control, IDisposable
 
     public void LoadFromFloatArray(float[] positions, Vector4? defaultColor = null)
     {
+        // 每三个浮点数构成一个点坐标，颜色则统一使用默认值。
         var color = defaultColor ?? new Vector4(1, 1, 1, 1);
         var points = new List<PointCloudPoint>();
 
@@ -599,6 +679,7 @@ public partial class PointCloudViewer : Control, IDisposable
 
     public void LoadFromVector3List(List<Vector3> positions, Vector4? defaultColor = null)
     {
+        // 这里直接把 Vector3 序列映射成 PointCloudPoint，减少宿主侧转换负担。
         var color = defaultColor ?? new Vector4(1, 1, 1, 1);
         var points = positions.Select(p => new PointCloudPoint(p, color)).ToList();
         Points = points;
@@ -606,6 +687,7 @@ public partial class PointCloudViewer : Control, IDisposable
 
     public void ResetView()
     {
+        // 重置视图时，恢复到一个最朴素的“看向原点”的状态。
         _rotationX = 0;
         _rotationY = 0;
         _zoom = 5;
@@ -619,6 +701,7 @@ public partial class PointCloudViewer : Control, IDisposable
     {
         if (Points == null || Points.Count == 0) return;
 
+        // 通过整个点集的包围盒估算观察中心和推荐距离。
         var min = new Vector3(float.MaxValue);
         var max = new Vector3(float.MinValue);
 

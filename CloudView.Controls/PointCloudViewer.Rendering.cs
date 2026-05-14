@@ -13,6 +13,7 @@ public partial class PointCloudViewer
 {
     #region 着色器代码
 
+    // 主场景着色器：负责把点云、坐标轴、网格、ROI 以及通用几何对象统一变换到裁剪空间。
     private const string VertexShaderSource = @"
 #version 330 core
 layout (location = 0) in vec3 aPosition;
@@ -106,6 +107,7 @@ void main()
     {
         if (_gl == null || !_isInitialized) return;
 
+        // 任何一帧渲染前，先把 WGL 上下文切成当前控制的上下文。
         Win32Interop.wglMakeCurrent(_hDC, _hGLRC);
 
         int width = (int)ActualWidth;
@@ -123,6 +125,7 @@ void main()
         _gl.PointSize(PointSize);
 
         var model = Matrix4x4.Identity;
+        // 视图矩阵由相机位置、目标点和上方向决定；投影矩阵则决定透视和视锥范围。
         var view = CreateLookAtMatrix(_cameraPosition, _cameraTarget, _cameraUp);
         var projection = CreatePerspectiveMatrix(_fov * MathF.PI / 180f, (float)width / height, 0.1f, 1000f);
 
@@ -134,6 +137,7 @@ void main()
         // 绘制坐标系轴线
         if (ShowCoordinateAxis && _axisVertexCount > 0)
         {
+            // 轴线使用更粗的线宽，只是为了提升方向感，不参与深度层级竞争。
             _gl.LineWidth(2.0f);
             _gl.BindVertexArray(_axisVao);
             _gl.DrawArrays(PrimitiveType.Lines, 0, (uint)_axisVertexCount);
@@ -144,6 +148,7 @@ void main()
         // 绘制 XY 平面网格
         if (ShowGrid)
         {
+            // 网格范围随着缩放变化：看得远时网格铺得更大，看得近时网格更密。
             float gridRange = _zoom * 0.5f;
 
             if (_gridNeedsUpdate || MathF.Abs(_lastGridZoom - _zoom) > 0.01f)
@@ -185,6 +190,7 @@ void main()
         // 绘制右下角坐标轴指示器
         DrawOrientationGizmo(width, height);
 
+        // 最后交换前后缓冲，把本帧内容一次性呈现到屏幕。
         Win32Interop.SwapBuffers(_hDC);
     }
 
@@ -209,6 +215,7 @@ void main()
 
         float bgR = 0.0f, bgG = 0.0f, bgB = 0.0f, bgA = 0.65f;
 
+        // 覆盖层先做一个半透明背景，再用单独的文本纹理绘制鼠标世界坐标。
         var verticesList = new List<float>();
 
         void AddQuad(float lx, float rx, float by, float ty, float r, float g, float b, float a)
@@ -269,6 +276,7 @@ void main()
 
         _gl.UseProgram(_overlayShaderProgram);
 
+        // 这里只负责把半透明底板送进 GPU；真正的数字文本由 DrawCachedText 负责。
         _gl.Enable(EnableCap.DepthTest);
         _gl.Disable(EnableCap.Blend);
 
@@ -291,6 +299,7 @@ void main()
         if (_gl == null || _textShaderProgram == 0)
             return;
 
+        // 文本内容发生变化时才重建纹理，避免每帧重复生成位图和纹理对象。
         if (_cachedTextTexture == 0 || _cachedTextContent != text)
         {
             if (_cachedTextTexture != 0)
@@ -336,6 +345,7 @@ void main()
 
         _gl.UseProgram(_textShaderProgram);
 
+        // 文本使用像素坐标的正交投影，这样 UI 尺寸和字体大小不会随着 3D 相机而变化。
         var orthoProjection = Matrix4x4.CreateOrthographicOffCenter(0, windowWidth, windowHeight, 0, -1, 1);
         SetUniformMatrix4(_gl, _textShaderProgram, "uProjection", orthoProjection);
 
@@ -377,6 +387,7 @@ void main()
         var yProj = Vector3.TransformNormal(Vector3.UnitY, view);
         var zProj = Vector3.TransformNormal(Vector3.UnitZ, view);
 
+        // 根据相机朝向把世界三轴投影到屏幕上，再按深度排序，保证“远轴先画”。
         var axes = new (float px, float py, float pz, Vector4 color, string label)[]
         {
             (xProj.X, xProj.Y, xProj.Z, new Vector4(1, 0.2f, 0.2f, 1), "X"),
@@ -394,6 +405,7 @@ void main()
 
         foreach (var axis in axes)
         {
+            // 线段终点按投影方向偏移，形成右下角的小坐标轴指示器。
             float endPixelX = centerX + axis.px * axisPixelLength;
             float endPixelY = centerY - axis.py * axisPixelLength;
 
@@ -453,6 +465,7 @@ void main()
 
         foreach (var axis in axes)
         {
+            // 标签位置沿着轴线外侧再偏移一小段，避免和线段本体重叠。
             float endPixelX = centerX + axis.px * axisPixelLength;
             float endPixelY = centerY - axis.py * axisPixelLength;
 
@@ -539,6 +552,7 @@ void main()
 
     private unsafe uint CreateMultiLineTextTexture(string text, int fontSize, out int texWidth, out int texHeight)
     {
+        // 先用 WPF 的文本排版引擎生成文字位图，再上传到 OpenGL 作为纹理。
         var formattedText = new System.Windows.Media.FormattedText(
             text,
             System.Globalization.CultureInfo.GetCultureInfo("en-us"),
@@ -566,6 +580,7 @@ void main()
         byte[] pixels = new byte[texWidth * texHeight * 4];
         bitmap.CopyPixels(pixels, texWidth * 4, 0);
 
+        // WPF 位图是 BGRA，OpenGL 这里使用 RGBA，所以要交换 R/B 通道。
         for (int i = 0; i < pixels.Length; i += 4)
         {
             (pixels[i], pixels[i + 2]) = (pixels[i + 2], pixels[i]);
@@ -596,6 +611,7 @@ void main()
 
     private Matrix4x4 CreateOrthoMatrix(float left, float right, float bottom, float top, float near, float far)
     {
+        // 手写正交矩阵，便于理解坐标范围如何映射到裁剪空间。
         float width = right - left;
         float height = top - bottom;
         float depth = far - near;
@@ -620,6 +636,7 @@ void main()
 
     private static Matrix4x4 CreateLookAtMatrix(Vector3 eye, Vector3 target, Vector3 up)
     {
+        // 经典 LookAt：zAxis 指向“从目标看向相机”的方向，xAxis/yAxis 构成相机局部基。
         var zAxis = Vector3.Normalize(eye - target);
         var xAxis = Vector3.Normalize(Vector3.Cross(up, zAxis));
         var yAxis = Vector3.Cross(zAxis, xAxis);
@@ -634,6 +651,7 @@ void main()
 
     private static Matrix4x4 CreatePerspectiveMatrix(float fov, float aspect, float near, float far)
     {
+        // 透视矩阵决定远处物体更小、近处更大的视觉效果。
         float tanHalfFov = MathF.Tan(fov / 2f);
         return new Matrix4x4(
             1f / (aspect * tanHalfFov), 0, 0, 0,
@@ -647,6 +665,7 @@ void main()
     {
         if (_gl != null && _isInitialized && width > 0 && height > 0)
         {
+            // 宿主窗口尺寸变化后，直接更新视口并重绘，避免拉伸或黑边。
             Win32Interop.wglMakeCurrent(_hDC, _hGLRC);
             _gl.Viewport(0, 0, (uint)width, (uint)height);
             Render();
