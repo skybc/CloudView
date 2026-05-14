@@ -460,7 +460,14 @@ public partial class PointCloudViewer
         Vector3 localAxis = Vector3.Normalize(localPosition == Vector3.Zero ? Vector3.UnitX : localPosition);
         Vector3 worldPosition = roi.LocalToWorld(localPosition);
         Vector3 worldDirection = SafeNormalize(roi.LocalAxisToWorld(localAxis), Vector3.UnitX);
-        Vector3 hitPosition = AddDirectionalArrowGlyph(roi, worldPosition, worldDirection, fillColor, scaleMultiplier);
+
+        // 绘制箭头（高亮时视觉放大），但命中点始终按基础 scale 计算。
+        // 避免 emphasized 状态改变时命中点跳变，消除悬停闪烁和点击误触。
+        AddDirectionalArrowGlyph(roi, worldPosition, worldDirection, fillColor, scaleMultiplier);
+        float baseScale = GetHandleScale(roi);
+        // 与 AddDirectionalArrowGlyph 内部公式对齐：baseOffset + shaftLength + 55% coneLength
+        const float hitDistFactor = 0.35f + 1.2f + 0.92f * 0.55f; // ≈ 2.056
+        Vector3 hitPosition = worldPosition + worldDirection * (baseScale * hitDistFactor);
 
         _roiHandleVisuals.Add(new RoiHandleVisual
         {
@@ -677,9 +684,62 @@ public partial class PointCloudViewer
         return points;
     }
 
+    private void UpdateHoveredHandle(Point position)
+    {
+        if (_roiInteractionMode != RoiInteractionMode.None || _isRotating || _isPanning || _activeRoi == null)
+        {
+            if (_hoveredHandle != null)
+            {
+                _hoveredHandle = null;
+                _roiNeedsRebuild = true;
+                _needsRender = true;
+            }
+            return;
+        }
+
+        // 迟滞（hysteresis）：已经处于悬停状态时，使用更大的退出半径（22px > 16px 进入阈值），
+        // 防止鼠标微小抖动或命中点随帧重建产生的微小偏差导致快速进出切换、视觉闪烁。
+        if (_hoveredHandle != null)
+        {
+            int w = (int)ActualWidth;
+            int h = (int)ActualHeight;
+            if (w > 0 && h > 0)
+            {
+                var mvp = GetCurrentMvp(w, h);
+                var current = _roiHandleVisuals.FirstOrDefault(
+                    v => ReferenceEquals(v.Roi, _hoveredHandle.Roi) && v.Kind == _hoveredHandle.Kind);
+                if (current != null)
+                {
+                    var screen = WorldToScreen(current.Position, mvp, w, h);
+                    if ((screen - position).Length < 22.0)
+                        return;
+                }
+            }
+        }
+
+        TryFindHandle(position, out var found);
+
+        bool changed;
+        if (found == null && _hoveredHandle == null)
+            changed = false;
+        else if (found == null || _hoveredHandle == null)
+            changed = true;
+        else
+            changed = !ReferenceEquals(_hoveredHandle.Roi, found.Roi) || _hoveredHandle.Kind != found.Kind;
+
+        if (changed)
+        {
+            _hoveredHandle = found;
+            _roiNeedsRebuild = true;
+            _needsRender = true;
+        }
+    }
+
     private bool IsHandleEmphasized(RoiBase roi, RoiHandleKind kind)
     {
-        return IsSameHandle(_activeRoiHandle, roi, kind) || IsSameHandle(_pendingHandle, roi, kind);
+        return IsSameHandle(_activeRoiHandle, roi, kind)
+            || IsSameHandle(_pendingHandle, roi, kind)
+            || IsSameHandle(_hoveredHandle, roi, kind);
     }
 
     private static bool IsSameHandle(RoiHandleVisual? handle, RoiBase roi, RoiHandleKind kind)
@@ -1119,7 +1179,9 @@ public partial class PointCloudViewer
 
         float cross = (float)((previousVector.X * currentVector.Y) - (previousVector.Y * currentVector.X));
         float dot = (float)((previousVector.X * currentVector.X) + (previousVector.Y * currentVector.Y));
-        float angle = MathF.Atan2(cross, dot);
+        // 屏幕坐标 Y 轴朝下（左手系），正 cross 对应视觉顺时针拖动。
+        // 右手法则中，顺时针绕轴正方向旋转对应负角度，故取反。
+        float angle = -MathF.Atan2(cross, dot);
         if (MathF.Abs(angle) <= 1e-4f)
         {
             _lastInteractionScreenPoint = currentPosition;
@@ -1380,6 +1442,7 @@ public partial class PointCloudViewer
 
         _roiInteractionMode = RoiInteractionMode.None;
         _activeRoiHandle = null;
+        _hoveredHandle = null;
         ClearPendingLeftGestureState();
         _roiNeedsRebuild = true;
         _needsRender = true;

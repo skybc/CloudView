@@ -350,6 +350,7 @@ public partial class PointCloudViewer : Control, IDisposable
     private bool _roiNeedsRebuild;
     private RoiBase? _activeRoi;
     private RoiHandleVisual? _activeRoiHandle;
+    private RoiHandleVisual? _hoveredHandle;
     private RoiInteractionMode _roiInteractionMode;
     private bool _isLeftGesturePending;
     private bool _leftGestureMoved;

@@ -30,6 +30,8 @@ public partial class PointCloudViewer
             _needsRender = true;
         }
 
+        UpdateHoveredHandle(currentPos);
+
         if (_roiInteractionMode != RoiInteractionMode.None)
         {
             UpdateRoiInteraction(currentPos);
