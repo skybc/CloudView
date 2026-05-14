@@ -48,9 +48,10 @@ public partial class PointCloudViewer
         if (_isRotating)
         {
             // 左键拖拽视图时，按鼠标位移转换为欧拉角增量。
+            // 注意：这里采用“拖哪边就朝哪边看”的直觉映射，所以角度增量需要与屏幕位移同向。
             var delta = currentPos - _lastMousePosition;
-            _rotationY += (float)delta.X * 0.01f;
-            _rotationX += (float)delta.Y * 0.01f;
+            _rotationY -= (float)delta.X * 0.01f;
+            _rotationX -= (float)delta.Y * 0.01f;
             _rotationX = Math.Clamp(_rotationX, -orbitPitchLimit, orbitPitchLimit);
 
             UpdateCameraPositionWithRotation();

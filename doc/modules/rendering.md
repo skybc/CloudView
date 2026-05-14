@@ -335,6 +335,14 @@ viewer.RoiSelected += (sender, args) =>
 
 ## 最近更新 ✨
 
+### v2.9 - 左键旋转方向修复
+- **问题修复**：
+  - 修正左键拖拽 Orbit 时相机旋转方向与鼠标拖动方向相反的问题
+
+- **实现细节**：
+  - 调整 `PointCloudViewer.Mouse.cs` 中视图旋转的欧拉角增量符号
+  - 使鼠标向右拖动时视图向右跟随，向上拖动时视图向上跟随，更符合直觉
+
 ### v2.8 - PointCloudViewer 注释整理
 - **内容**：
   - 为 `PointCloudViewer` 主控制器、OpenGL 初始化、鼠标交互、ROI 编辑和 Shapes 管线补充了详细中文注释
